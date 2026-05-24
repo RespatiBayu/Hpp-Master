@@ -14,7 +14,28 @@ View your app in AI Studio: https://ai.studio/apps/14bc0814-8b23-4820-97b7-fefab
 
 
 1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
+   `pnpm install` atau `npm install`
+2. Isi `.env.local` dengan minimal `DATABASE_URL`, `APP_URL`, dan jika perlu `GEMINI_API_KEY`
+3. Jalankan backend:
+   `npm run dev:server`
+4. Jalankan frontend:
    `npm run dev`
+
+## Arsitektur saat ini
+
+- Frontend: React + Vite
+- Backend: Express
+- Database: Postgres
+- Auth: email/password lokal dengan `httpOnly cookie`
+- Multi-tenant: satu aplikasi bisa menampung banyak bisnis
+
+## Setup Postgres
+
+- Buat database kosong, misalnya `hpp_master`
+- Isi `DATABASE_URL` ke Postgres VPS Anda
+- Saat backend start dengan `AUTO_MIGRATE=true`, tabel dasar akan dibuat otomatis dari `server/migrations/001_init.sql`
+
+## Flow akun
+
+- User yang belum diundang bisa mendaftar dan membuat bisnis baru
+- User yang sudah diundang owner/admin bisa mendaftar memakai email yang sama untuk masuk ke bisnis tersebut

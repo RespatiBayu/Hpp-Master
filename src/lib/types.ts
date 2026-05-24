@@ -52,6 +52,7 @@ export interface AppUser {
   email: string;
   role: string;
   createdAt: string;
+  status?: "active" | "invited";
 }
 
 export interface UserActivity {

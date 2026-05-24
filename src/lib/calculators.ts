@@ -1,4 +1,4 @@
-import { Item, Purchase, Production, Sale, RawMaterialUsage } from "./types";
+import { Expense, Item, Purchase, Production, Sale, RawMaterialUsage } from "./types";
 
 export const calculateItemStats = (
   items: Item[],
@@ -82,7 +82,10 @@ export const calculateItemStats = (
 export const calculateProfitLoss = (
     sales: Sale[],
     productions: Production[],
-    expenses: Expense // ah wait, I need to pass in all params, let me just calculate when needed
+    expenses: Expense
 ) => {
+    void sales;
+    void productions;
+    void expenses;
     // We will do this in the Dashboard view directly using simple reduce.
 };
