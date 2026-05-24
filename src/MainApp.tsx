@@ -12,7 +12,7 @@ import UserView from "./views/UserView";
 import LoginView from "./views/LoginView";
 
 export default function MainApp() {
-  const { user, needsAuth, isLoading, logout, spreadsheetId } = useAppContext();
+  const { user, businessName, businessRole, needsAuth, isLoading, logout } = useAppContext();
   const [activeTab, setActiveTab] = useState("dashboard");
 
   if (needsAuth) {
@@ -24,7 +24,7 @@ export default function MainApp() {
       <div className="flex h-screen w-full items-center justify-center bg-gray-50">
         <div className="text-center">
             <Loader2 className="w-10 h-10 animate-spin text-blue-600 mx-auto mb-4" />
-            <p className="text-gray-500 font-medium">Memuat Data dari Google Sheets...</p>
+            <p className="text-gray-500 font-medium">Memuat data bisnis dari database...</p>
         </div>
       </div>
     );
@@ -41,7 +41,7 @@ export default function MainApp() {
 
   tabs.push({ id: "user", label: "User", icon: Users });
 
-  if (user?.email === "bayu.respatih@gmail.com") {
+  if (businessRole === "owner" || businessRole === "admin") {
     tabs.push({ id: "admin", label: "Admin Panel", icon: Settings });
   }
 
@@ -74,18 +74,10 @@ export default function MainApp() {
             </nav>
             <div className="p-6 border-t border-slate-100 shrink-0 bg-white">
                 <div className="flex items-center gap-3 p-3 bg-slate-100 rounded-xl mb-4">
-                  {spreadsheetId && spreadsheetId !== "LOCAL_STORAGE_DB" ? (
-                    <>
-                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                      <span className="text-xs font-semibold text-slate-600">Terhubung ke Sheets</span>
-                    </>
-                  ) : (
-                    <>
-                      <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
-                      <span className="text-xs font-semibold text-slate-600">Penyimpanan Lokal</span>
-                    </>
-                  )}
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="text-xs font-semibold text-slate-600">Terhubung ke Postgres</span>
                 </div>
+                {businessName && <div className="text-[11px] font-semibold text-slate-400 mb-3 truncate">{businessName}</div>}
                 <div className="flex items-center justify-between text-sm">
                     <div className="flex items-center text-slate-600">
                         <UserCircle className="w-8 h-8 text-slate-400 shrink-0 mr-2" />

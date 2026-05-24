@@ -1,6 +1,6 @@
 {
   "name": "Kalkulator HPP UMKM",
-  "description": "Aplikasi untuk menghitung Harga Pokok Produksi, mencatat pembelian, produksi, penjualan, dan mengelola inventori (bahan baku & barang jadi) dengan integrasi Google Sheets.",
+  "description": "Aplikasi untuk menghitung Harga Pokok Produksi, mencatat pembelian, produksi, penjualan, dan mengelola inventori multi-tenant berbasis Postgres.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
