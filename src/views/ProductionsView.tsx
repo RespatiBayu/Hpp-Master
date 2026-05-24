@@ -1,0 +1,179 @@
+import React, { useState } from "react";
+import { useAppContext } from "../store/AppContext";
+import { Plus, X } from "lucide-react";
+import { RawMaterialUsage } from "../lib/types";
+import { calculateItemStats } from "../lib/calculators";
+
+export default function ProductionsView() {
+  const { items, purchases, productions, sales, addProduction } = useAppContext();
+  const rawItems = items.filter(i => i.type === "RAW" || i.type === "HALF_FINISHED");
+  const finishedItems = items.filter(i => i.type === "FINISHED" || i.type === "HALF_FINISHED");
+  
+  const stats = calculateItemStats(items, purchases, productions, sales);
+
+  const [isAdding, setIsAdding] = useState(false);
+  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [finishedItemId, setFinishedItemId] = useState("");
+  const [finishedQty, setFinishedQty] = useState("");
+  const [overheadCost, setOverheadCost] = useState("");
+  
+  const [rawUsage, setRawUsage] = useState<RawMaterialUsage[]>([]);
+
+  const addRawUsageLine = () => {
+    if (rawItems.length > 0) {
+      setRawUsage([...rawUsage, { id: rawItems[0].id, qty: 1 }]);
+    }
+  };
+
+  const updateRawUsage = (index: number, field: keyof RawMaterialUsage, value: any) => {
+    const updated = [...rawUsage];
+    updated[index] = { ...updated[index], [field]: value };
+    setRawUsage(updated);
+  };
+
+  const removeRawUsage = (index: number) => {
+    setRawUsage(rawUsage.filter((_, i) => i !== index));
+  };
+
+  const calculateCurrentHPP = () => {
+    let totalRawCost = 0;
+    rawUsage.forEach(r => {
+      const avgCost = stats[r.id]?.avgCost || 0;
+      totalRawCost += (avgCost * r.qty);
+    });
+    return totalRawCost + Number(overheadCost || 0);
+  };
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!finishedItemId || !finishedQty) return;
+    
+    const totalHPP = calculateCurrentHPP();
+    
+    await addProduction({
+      date,
+      finishedItemId,
+      finishedQty: Number(finishedQty),
+      rawMaterialsJSON: JSON.stringify(rawUsage),
+      overheadCost: Number(overheadCost),
+      totalHPP
+    });
+
+    setIsAdding(false);
+    setFinishedItemId(""); setFinishedQty(""); setOverheadCost(""); setRawUsage([]);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Produksi & HPP</h1>
+        <button
+          onClick={() => setIsAdding(!isAdding)}
+          className="flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-500 transition-colors"
+        >
+          <Plus className="mr-2 h-4 w-4" /> Catat Produksi
+        </button>
+      </div>
+
+      {isAdding && (
+        <form onSubmit={handleAdd} className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm space-y-6">
+          <h2 className="text-lg font-bold text-slate-900">Produksi Barang Jadi</h2>
+          
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="text-[10px] uppercase text-slate-400 font-bold mb-1 block">Tanggal</label>
+              <input required type="date" value={date} onChange={e=>setDate(e.target.value)} className="w-full bg-slate-50 border-none rounded-xl p-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase text-slate-400 font-bold mb-1 block">Barang Jadi yang Dihasilkan</label>
+              <select required value={finishedItemId} onChange={e=>setFinishedItemId(e.target.value)} className="w-full bg-slate-50 border-none rounded-xl p-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
+                <option value="">-- Pilih Barang --</option>
+                {finishedItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] uppercase text-slate-400 font-bold mb-1 block">Kuantitas Dihasilkan</label>
+              <input required type="number" min="0.01" step="any" value={finishedQty} onChange={e=>setFinishedQty(e.target.value)} className="w-full bg-slate-50 border-none rounded-xl p-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase text-slate-400 font-bold mb-1 block">Biaya Pabrikasi (Overhead)</label>
+              <input required type="number" min="0" value={overheadCost} onChange={e=>setOverheadCost(e.target.value)} placeholder="0" className="w-full bg-slate-50 border-none rounded-xl p-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100 pt-6">
+            <div className="flex items-center justify-between mb-4">
+                <h3 className="block text-xs font-bold text-slate-500 uppercase">Penggunaan Bahan Baku</h3>
+                <button type="button" onClick={addRawUsageLine} className="text-xs font-bold text-emerald-600 hover:text-emerald-500 transition-colors">
+                    + Tambah Bahan Baku
+                </button>
+            </div>
+            
+            {rawUsage.map((usage, idx) => (
+                <div key={idx} className="flex items-center gap-4 mb-3">
+                    <div className="flex-1">
+                        <select required value={usage.id} onChange={e=>updateRawUsage(idx, 'id', e.target.value)} className="block w-full bg-slate-50 border-none rounded-xl p-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
+                            {rawItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                        </select>
+                    </div>
+                    <div className="w-32">
+                        <input required type="number" min="0.01" step="any" value={usage.qty} onChange={e=>updateRawUsage(idx, 'qty', Number(e.target.value))} placeholder="Qty" className="block w-full bg-slate-50 border-none rounded-xl p-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
+                    </div>
+                    <div className="text-sm text-slate-500 w-32 truncate font-medium">
+                        Rp {Math.round((stats[usage.id]?.avgCost || 0) * usage.qty).toLocaleString()}
+                    </div>
+                    <button type="button" onClick={() => removeRawUsage(idx)} className="text-slate-400 hover:text-red-500 transition-colors p-2"><X className="w-5 h-5"/></button>
+                </div>
+            ))}
+          </div>
+
+          <div className="bg-slate-50 p-6 rounded-2xl flex justify-between items-center text-lg mt-4 border border-slate-100">
+            <span className="font-bold text-slate-600">Total HPP Produksi (Estimasi)</span>
+            <span className="font-bold text-emerald-600 text-2xl">Rp {Math.round(calculateCurrentHPP()).toLocaleString()}</span>
+          </div>
+          {finishedQty && Number(finishedQty) > 0 && (
+             <div className="text-right text-sm font-medium text-slate-500 mt-2">
+                 HPP per unit: Rp {Math.round(calculateCurrentHPP() / Number(finishedQty)).toLocaleString()}
+             </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
+            <button type="button" onClick={() => setIsAdding(false)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-lg transition-colors">Batal</button>
+            <button type="submit" className="bg-emerald-600 px-6 py-2 text-sm font-bold text-white hover:bg-emerald-500 rounded-lg transition-colors">Simpan Produksi</button>
+          </div>
+        </form>
+      )}
+
+      <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm flex flex-col">
+          <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-white">
+            <h4 className="font-bold text-slate-900">Log Produksi Terakhir</h4>
+          </div>
+        <table className="w-full text-left">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Tanggal</th>
+              <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Barang Jadi</th>
+              <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Qty</th>
+              <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Biaya Pabrikasi</th>
+              <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Total HPP</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50 bg-white">
+            {productions.map((p) => {
+              const item = items.find(i => i.id === p.finishedItemId);
+              return (
+                <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="px-6 py-4 text-sm text-slate-900">{p.date}</td>
+                  <td className="px-6 py-4 text-sm font-medium text-slate-900">{item?.name || "-"}</td>
+                  <td className="px-6 py-4 text-sm text-right text-slate-500">{p.finishedQty} {item?.unit}</td>
+                  <td className="px-6 py-4 text-sm text-right text-slate-500">Rp {p.overheadCost.toLocaleString()}</td>
+                  <td className="px-6 py-4 text-sm text-right font-bold text-slate-900">Rp {p.totalHPP.toLocaleString()}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
