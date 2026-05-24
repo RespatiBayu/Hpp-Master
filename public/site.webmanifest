@@ -1,0 +1,25 @@
+{
+  "name": "HPP Master UMKM",
+  "short_name": "HPP Master",
+  "description": "Aplikasi UMKM untuk menghitung Harga Pokok Produksi, memantau stok, pembelian, produksi, penjualan, dan laba rugi.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f766e",
+  "lang": "id-ID",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.svg",
+      "sizes": "180x180",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
