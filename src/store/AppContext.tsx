@@ -356,6 +356,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
     if (result.created.length > 0) {
       setAppUsers((prev) => [...prev, ...result.created]);
+      setBusinesses((prev) => {
+        const next = [...prev];
+        const seen = new Set(prev.map((business) => business.id));
+
+        for (const member of result.created) {
+          if (member.businessId && member.businessName && !seen.has(member.businessId)) {
+            next.push({ id: member.businessId, name: member.businessName });
+            seen.add(member.businessId);
+          }
+        }
+
+        return next;
+      });
     }
 
     await logActivity(

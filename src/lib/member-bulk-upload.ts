@@ -132,7 +132,6 @@ export const parseBulkUserUploadFile = (text: string): BulkUserUploadRow[] => {
   const emailIndex = resolveHeaderIndex(headers, ["email", "e_mail", "mail"]);
   const roleIndex = resolveHeaderIndex(headers, ["role", "peran"]);
   const passwordIndex = resolveHeaderIndex(headers, ["password", "kata_sandi", "kata_sandi_baru"]);
-  const businessIdIndex = resolveHeaderIndex(headers, ["business_id", "bisnis_id"]);
   const businessNameIndex = resolveHeaderIndex(headers, ["business_name", "business", "bisnis", "nama_bisnis"]);
 
   if (emailIndex < 0) {
@@ -144,7 +143,6 @@ export const parseBulkUserUploadFile = (text: string): BulkUserUploadRow[] => {
     email: (row[emailIndex] || "").trim(),
     role: roleIndex >= 0 ? normalizeRoleInput(row[roleIndex] || "") : "",
     password: passwordIndex >= 0 ? (row[passwordIndex] || "").trim() : "",
-    businessId: businessIdIndex >= 0 ? (row[businessIdIndex] || "").trim() : "",
     businessName: businessNameIndex >= 0 ? (row[businessNameIndex] || "").trim() : "",
   }));
 };

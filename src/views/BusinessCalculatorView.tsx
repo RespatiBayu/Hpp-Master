@@ -605,44 +605,44 @@ export default function BusinessCalculatorView() {
 
             {showRincian ? (
               <div className="w-full overflow-x-auto rounded-2xl border border-emerald-100 bg-white shadow-sm">
-                <table className="min-w-[560px] w-full text-left text-sm">
+                <table className="w-full table-fixed text-left text-sm">
                   <thead className="border-b border-gray-100 bg-slate-50 text-slate-600">
                     <tr>
-                      <th className="w-[40%] px-4 py-3 text-xs font-semibold">Komponen Biaya</th>
-                      <th className="w-[20%] px-4 py-3 text-center text-xs font-semibold">%</th>
-                      <th className="w-[40%] px-4 py-3 text-right text-xs font-semibold">Total (Rp)</th>
+                      <th className="px-3 py-3 text-xs font-semibold sm:px-4">Komponen Biaya</th>
+                      <th className="w-[72px] px-2 py-3 text-center text-xs font-semibold sm:w-[88px] sm:px-3">%</th>
+                      <th className="w-[120px] px-3 py-3 text-right text-xs font-semibold whitespace-nowrap sm:w-[156px] sm:px-4">Total (Rp)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     <tr>
-                      <td className="px-4 py-3 font-medium text-slate-700">Omset Penjualan</td>
-                      <td className="px-4 py-3 text-center text-slate-600">100%</td>
-                      <td className="px-4 py-3 text-right font-semibold text-slate-800">Rp {formatRp(totalOmset)}</td>
+                      <td className="px-3 py-3 font-medium text-slate-700 sm:px-4">Omset Penjualan</td>
+                      <td className="px-2 py-3 text-center text-slate-600 sm:px-3">100%</td>
+                      <td className="px-3 py-3 text-right font-semibold whitespace-nowrap text-slate-800 sm:px-4">Rp {formatRp(totalOmset)}</td>
                     </tr>
                     <tr>
-                      <td className="px-4 py-3 pl-6 text-red-500">- HPP (Bahan Baku)</td>
-                      <td className="px-4 py-3 text-center text-red-500">{pctHpp.toFixed(1)}%</td>
-                      <td className="px-4 py-3 text-right text-red-500">Rp {formatRp(totalHpp)}</td>
+                      <td className="px-3 py-3 pl-5 text-red-500 sm:px-4 sm:pl-6">- HPP (Bahan Baku)</td>
+                      <td className="px-2 py-3 text-center text-red-500 sm:px-3">{pctHpp.toFixed(1)}%</td>
+                      <td className="px-3 py-3 text-right whitespace-nowrap text-red-500 sm:px-4">Rp {formatRp(totalHpp)}</td>
                     </tr>
                     <tr>
-                      <td className="px-4 py-3 pl-6 text-red-500">- Marketing & Promo</td>
-                      <td className="px-4 py-3 text-center text-red-500">{pctMarketing.toFixed(1)}%</td>
-                      <td className="px-4 py-3 text-right text-red-500">Rp {formatRp(totalMarketing)}</td>
+                      <td className="px-3 py-3 pl-5 text-red-500 sm:px-4 sm:pl-6">- Marketing & Promo</td>
+                      <td className="px-2 py-3 text-center text-red-500 sm:px-3">{pctMarketing.toFixed(1)}%</td>
+                      <td className="px-3 py-3 text-right whitespace-nowrap text-red-500 sm:px-4">Rp {formatRp(totalMarketing)}</td>
                     </tr>
                     <tr>
-                      <td className="px-4 py-3 pl-6 text-red-500">- Gaji Karyawan</td>
-                      <td className="px-4 py-3 text-center text-red-500">{pctGaji.toFixed(1)}%</td>
-                      <td className="px-4 py-3 text-right text-red-500">Rp {formatRp(totalGaji)}</td>
+                      <td className="px-3 py-3 pl-5 text-red-500 sm:px-4 sm:pl-6">- Gaji Karyawan</td>
+                      <td className="px-2 py-3 text-center text-red-500 sm:px-3">{pctGaji.toFixed(1)}%</td>
+                      <td className="px-3 py-3 text-right whitespace-nowrap text-red-500 sm:px-4">Rp {formatRp(totalGaji)}</td>
                     </tr>
                     <tr>
-                      <td className="px-4 py-3 pl-6 text-red-500">- Operasional Lain</td>
-                      <td className="px-4 py-3 text-center text-red-500">{pctOps.toFixed(1)}%</td>
-                      <td className="px-4 py-3 text-right text-red-500">Rp {formatRp(totalOps)}</td>
+                      <td className="px-3 py-3 pl-5 text-red-500 sm:px-4 sm:pl-6">- Operasional Lain</td>
+                      <td className="px-2 py-3 text-center text-red-500 sm:px-3">{pctOps.toFixed(1)}%</td>
+                      <td className="px-3 py-3 text-right whitespace-nowrap text-red-500 sm:px-4">Rp {formatRp(totalOps)}</td>
                     </tr>
                     <tr className="bg-[#f0fdf4]">
-                      <td className="px-4 py-3 font-bold text-emerald-700">NET PROFIT (BERSIH)</td>
-                      <td className="px-4 py-3 text-center font-bold text-emerald-700">{marginTotal.toFixed(1)}%</td>
-                      <td className="px-4 py-3 text-right font-bold text-emerald-700">Rp {formatRp(totalProfit)}</td>
+                      <td className="px-3 py-3 font-bold text-emerald-700 sm:px-4">NET PROFIT (BERSIH)</td>
+                      <td className="px-2 py-3 text-center font-bold text-emerald-700 sm:px-3">{marginTotal.toFixed(1)}%</td>
+                      <td className="px-3 py-3 text-right font-bold whitespace-nowrap text-emerald-700 sm:px-4">Rp {formatRp(totalProfit)}</td>
                     </tr>
                   </tbody>
                 </table>

@@ -150,6 +150,7 @@ const resolveManagedBusiness = async (client, actorRole, actorBusinessId, option
   const requestedBusinessId = typeof options.requestedBusinessId === "string" ? options.requestedBusinessId.trim() : "";
   const requestedBusinessName = typeof options.requestedBusinessName === "string" ? options.requestedBusinessName.trim() : "";
   const fallbackBusinessId = typeof options.fallbackBusinessId === "string" ? options.fallbackBusinessId.trim() : "";
+  const createBusinessOnRequestedName = Boolean(options.createBusinessOnRequestedName);
 
   if (normalizeBusinessRole(actorRole) !== "super_admin") {
     if (!actorBusinessId) {
@@ -174,6 +175,24 @@ const resolveManagedBusiness = async (client, actorRole, actorBusinessId, option
   }
 
   if (requestedBusinessName) {
+    if (createBusinessOnRequestedName) {
+      const businessId = randomId("biz_");
+      const slug = await generateUniqueBusinessSlug(client, requestedBusinessName);
+
+      await client.query(
+        `
+          insert into businesses (id, name, slug)
+          values ($1, $2, $3)
+        `,
+        [businessId, requestedBusinessName, slug]
+      );
+
+      return {
+        id: businessId,
+        name: requestedBusinessName,
+      };
+    }
+
     const businessResult = await client.query(
       `
         select id, name
@@ -211,13 +230,16 @@ const resolveManagedBusiness = async (client, actorRole, actorBusinessId, option
 
 const createBusinessMemberRecord = async (client, payload) => {
   const email = typeof payload.email === "string" ? normalizeEmail(payload.email) : "";
+  const requestedBusinessName = typeof payload.requestedBusinessName === "string" ? payload.requestedBusinessName.trim() : "";
+  const isCreatingBusiness = Boolean(payload.createBusinessOnRequestedName && requestedBusinessName);
   const requestedRole = normalizeBusinessRole(typeof payload.role === "string" ? payload.role : "");
-  const role = requestedRole || "staff";
+  const role = requestedRole || (isCreatingBusiness ? "super_admin" : "staff");
   const password = typeof payload.password === "string" ? payload.password : "";
   const targetBusiness = await resolveManagedBusiness(client, payload.actorRole, payload.actorBusinessId, {
     requestedBusinessId: payload.requestedBusinessId,
-    requestedBusinessName: payload.requestedBusinessName,
+    requestedBusinessName,
     fallbackBusinessId: payload.fallbackBusinessId,
+    createBusinessOnRequestedName: payload.createBusinessOnRequestedName,
   });
 
   if (!email) {
@@ -1200,9 +1222,9 @@ app.post(
             email: row.email,
             role: row.role,
             password: row.password,
-            requestedBusinessId: row.businessId,
             requestedBusinessName: row.businessName,
             fallbackBusinessId: defaultBusinessId || req.auth.businessId,
+            createBusinessOnRequestedName: true,
           })
         );
 

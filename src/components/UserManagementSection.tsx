@@ -80,8 +80,8 @@ export default function UserManagementSection() {
   const selectedBulkBusinessName =
     availableBusinesses.find((business) => business.id === bulkDefaultBusinessId)?.name || businessName || "bisnis default yang dipilih";
 
-  const getBulkRoleLabel = (role?: string) => {
-    if (!role) return `${getRoleLabel("staff")} (default)`;
+  const getBulkRoleLabel = (role?: string, businessNameForRow?: string) => {
+    if (!role) return `${getRoleLabel(businessNameForRow ? "super_admin" : "staff")} (default)`;
     if (role === "super_admin" || role === "admin" || role === "staff") {
       return getRoleLabel(role);
     }
@@ -317,8 +317,9 @@ export default function UserManagementSection() {
                 <h3 className="text-sm font-bold text-slate-900">Bulk Upload User Super Admin</h3>
                 <p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-600">
                   Upload file CSV atau TSV untuk membuat banyak user sekaligus. Kolom wajib hanya <strong>email</strong>. Kolom
-                  <strong> role</strong>, <strong>password</strong>, <strong>business_name</strong>, dan <strong>business_id</strong> bersifat
-                  opsional. Jika kolom bisnis dikosongkan, sistem memakai bisnis default yang Anda pilih di bawah.
+                  <strong> role</strong>, <strong>password</strong>, dan <strong>business_name</strong> bersifat opsional. Jika
+                  <strong> business_name</strong> diisi, sistem akan otomatis membuat bisnis baru untuk user tersebut. Jika kosong, sistem
+                  memakai bisnis default yang Anda pilih di bawah.
                 </p>
               </div>
               <button
@@ -375,7 +376,7 @@ export default function UserManagementSection() {
 
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-slate-600">
-                Role kosong akan otomatis jadi {getRoleLabel("staff")}
+                Role kosong: {getRoleLabel("super_admin")} untuk bisnis baru, selain itu {getRoleLabel("staff")}
               </span>
               <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-slate-600">
                 Password kosong akan membuat undangan user
@@ -439,8 +440,10 @@ export default function UserManagementSection() {
                         <tr key={`${row.rowNumber}-${row.email}`}>
                           <td className="px-3 py-2 text-sm text-slate-500">{row.rowNumber}</td>
                           <td className="px-3 py-2 text-sm font-medium text-slate-900">{row.email || "-"}</td>
-                          <td className="px-3 py-2 text-sm text-slate-500">{getBulkRoleLabel(row.role)}</td>
-                          <td className="px-3 py-2 text-sm text-slate-500">{row.businessName || row.businessId || selectedBulkBusinessName}</td>
+                          <td className="px-3 py-2 text-sm text-slate-500">{getBulkRoleLabel(row.role, row.businessName)}</td>
+                          <td className="px-3 py-2 text-sm text-slate-500">
+                            {row.businessName ? `Bisnis baru: ${row.businessName}` : selectedBulkBusinessName}
+                          </td>
                           <td className="px-3 py-2 text-sm text-slate-500">{row.password ? "Aktif" : "Undangan"}</td>
                         </tr>
                       ))}
@@ -486,7 +489,7 @@ export default function UserManagementSection() {
                             <td className="px-3 py-2 text-sm text-slate-600">{error.rowNumber}</td>
                             <td className="px-3 py-2 text-sm font-medium text-slate-900">{error.email || "-"}</td>
                             <td className="px-3 py-2 text-sm text-slate-600">
-                              {error.businessName || error.businessId || selectedBulkBusinessName}
+                              {error.businessName ? `Bisnis baru: ${error.businessName}` : selectedBulkBusinessName}
                             </td>
                             <td className="px-3 py-2 text-sm text-red-600">{error.message}</td>
                           </tr>
