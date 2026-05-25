@@ -32,7 +32,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Dashboard Laba Rugi</h1>
       </div>
 
@@ -76,8 +76,8 @@ export default function Dashboard() {
                 Semua stok aman.
             </div>
         ) : (
-            <div className="bg-red-50 border border-red-100 rounded-2xl flex flex-col overflow-hidden shadow-sm">
-            <table className="min-w-full text-left">
+            <div className="overflow-x-auto rounded-2xl border border-red-100 bg-red-50 shadow-sm">
+            <table className="min-w-[640px] text-left">
                 <thead className="bg-red-100/50">
                 <tr>
                     <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-red-800">Nama Barang</th>

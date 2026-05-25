@@ -162,12 +162,12 @@ create unique index if not exists idx_business_menu_packages_single_active
   on business_menu_packages(business_id)
   where is_active = true;
 
+alter table business_members
+drop constraint if exists business_members_role_check;
+
 update business_members
 set role = 'super_admin'
 where role = 'owner';
-
-alter table business_members
-drop constraint if exists business_members_role_check;
 
 alter table business_members
 add constraint business_members_role_check

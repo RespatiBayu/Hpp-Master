@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { BarChart2, Calculator, ChevronDown, Download, Info, Plus, Trash2, Utensils, Wand2 } from "lucide-react";
+import { BarChart2, Calculator, ChevronDown, Download, Info, Plus, Trash2, Utensils } from "lucide-react";
 
 type FlexibleCostType = "%" | "Rp/Pcs" | "Rp/Bln";
 
@@ -13,7 +13,6 @@ interface HppItem {
 }
 
 export default function BusinessCalculatorView() {
-  const [errorMsg, setErrorMsg] = useState("");
   const [namaProduk, setNamaProduk] = useState("");
   const [hargaJual, setHargaJual] = useState("");
   const [hppItems, setHppItems] = useState<HppItem[]>([]);
@@ -116,11 +115,6 @@ export default function BusinessCalculatorView() {
       setTargetPenjualan(Math.round(Number(targetOmset) / harga).toString());
     }
   }, [hargaJual, targetOmset]);
-
-  const handleAutoFill = () => {
-    if (!namaProduk) return;
-    setErrorMsg("Fitur isi otomatis AI belum dikonfigurasi pada build HPP Master ini.");
-  };
 
   const unitHarga = num(hargaJual);
   const totalOmset = num(targetOmset);
@@ -231,7 +225,7 @@ export default function BusinessCalculatorView() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 rounded-3xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-emerald-100/60 p-6 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-center gap-4">
+        <div className="flex items-start gap-4">
           <div className="rounded-2xl bg-emerald-600 p-3 text-white shadow-sm">
             <Utensils className="h-7 w-7" />
           </div>
@@ -245,7 +239,7 @@ export default function BusinessCalculatorView() {
 
         <button
           onClick={handleExport}
-          className="inline-flex items-center justify-center rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"
+          className="inline-flex w-full items-center justify-center rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 sm:w-auto"
         >
           <Download className="mr-2 h-4 w-4" />
           Export XLS
@@ -254,7 +248,7 @@ export default function BusinessCalculatorView() {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <div className="space-y-6 xl:col-span-5">
-          <section className="rounded-2xl border border-emerald-100 bg-white p-6 shadow-sm">
+          <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm sm:p-6">
             <div className="mb-5 flex items-center gap-3">
               <span className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-100 text-sm font-bold text-emerald-700">1</span>
               <h2 className="font-bold text-slate-900">Menu & Food Cost (HPP)</h2>
@@ -270,23 +264,6 @@ export default function BusinessCalculatorView() {
                   placeholder="Nasi Goreng Spesial"
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
                 />
-              </div>
-
-              <div className="pt-1">
-                <button
-                  onClick={handleAutoFill}
-                  disabled={!namaProduk}
-                  className={`flex w-full items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition-colors ${
-                    namaProduk ? "bg-emerald-600 text-white hover:bg-emerald-700" : "cursor-not-allowed bg-slate-100 text-slate-400"
-                  }`}
-                >
-                  <Wand2 className="h-4 w-4" />
-                  Isi Otomatis
-                </button>
-                <p className="mt-2 text-center text-[11px] text-slate-500">
-                  Isi otomatis AI belum aktif. Kalkulator manual tetap bisa dipakai penuh.
-                </p>
-                {errorMsg && <p className="mt-1.5 text-center text-[11px] font-medium text-red-500">{errorMsg}</p>}
               </div>
 
               <div>
@@ -319,8 +296,8 @@ export default function BusinessCalculatorView() {
                   ) : (
                     hppItems.map((item) => (
                       <div key={item.id} className="rounded-lg border border-gray-200 bg-white p-3">
-                        <div className="mb-3 grid grid-cols-12 gap-2">
-                          <div className="col-span-5">
+                        <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-12 sm:gap-2">
+                          <div className="sm:col-span-5">
                             <label className="mb-1 block text-[10px] uppercase tracking-wider text-slate-400">Bahan</label>
                             <input
                               type="text"
@@ -330,7 +307,7 @@ export default function BusinessCalculatorView() {
                               className="w-full border-b border-gray-200 pb-1 text-sm outline-none transition-colors focus:border-emerald-500"
                             />
                           </div>
-                          <div className="col-span-4">
+                          <div className="sm:col-span-4">
                             <label className="mb-1 block text-[10px] uppercase tracking-wider text-slate-400">Harga Beli</label>
                             <input
                               type="text"
@@ -340,7 +317,7 @@ export default function BusinessCalculatorView() {
                               className="w-full border-b border-gray-200 pb-1 text-sm outline-none transition-colors focus:border-emerald-500"
                             />
                           </div>
-                          <div className="col-span-3">
+                          <div className="sm:col-span-3">
                             <label className="mb-1 block text-[10px] uppercase tracking-wider text-slate-400">Satuan</label>
                             <input
                               type="text"
@@ -352,8 +329,8 @@ export default function BusinessCalculatorView() {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-12 items-end gap-2">
-                          <div className="col-span-3">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-12 sm:items-end sm:gap-2">
+                          <div className="sm:col-span-3">
                             <label className="mb-1 block text-[10px] uppercase tracking-wider text-slate-400">Isi (Qty)</label>
                             <input
                               type="number"
@@ -362,7 +339,7 @@ export default function BusinessCalculatorView() {
                               className="w-full rounded border border-gray-200 bg-slate-50 p-1.5 text-center text-sm outline-none focus:border-emerald-500"
                             />
                           </div>
-                          <div className="col-span-3">
+                          <div className="sm:col-span-3">
                             <label className="mb-1 block text-[10px] uppercase tracking-wider text-slate-400">Pakai</label>
                             <input
                               type="number"
@@ -372,11 +349,11 @@ export default function BusinessCalculatorView() {
                               className="w-full rounded border border-gray-200 bg-emerald-50 p-1.5 text-center text-sm outline-none focus:border-emerald-500"
                             />
                           </div>
-                          <div className="col-span-5 pb-1.5 text-right">
+                          <div className="pb-1.5 sm:col-span-5 sm:text-right">
                             <span className="mb-0.5 block text-[10px] uppercase tracking-wider text-slate-400">Biaya per Porsi</span>
                             <span className="text-sm font-bold text-slate-700">Rp {formatRp(hitungBiayaPerUnitHpp(item))}</span>
                           </div>
-                          <div className="col-span-1 flex justify-end pb-1.5">
+                          <div className="flex justify-end pb-1.5 sm:col-span-1">
                             <button onClick={() => hapusHppItem(item.id)} className="text-gray-300 transition-colors hover:text-red-500">
                               <Trash2 className="h-4 w-4" />
                             </button>
@@ -395,7 +372,7 @@ export default function BusinessCalculatorView() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-emerald-100 bg-white p-6 shadow-sm">
+          <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm sm:p-6">
             <div className="mb-5 flex items-center gap-3">
               <span className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-100 text-sm font-bold text-emerald-700">2</span>
               <h2 className="font-bold text-slate-900">Biaya Operasional</h2>
@@ -427,7 +404,7 @@ export default function BusinessCalculatorView() {
               ].map((field) => (
                 <div key={field.label}>
                   <label className="mb-1.5 block text-xs font-semibold text-slate-600">{field.label}</label>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row">
                     <div className="relative flex-1">
                       {field.type !== "%" ? <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-400">Rp</span> : null}
                       <input
@@ -441,7 +418,7 @@ export default function BusinessCalculatorView() {
                       />
                       {field.type === "%" ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-400">%</span> : null}
                     </div>
-                    <div className="relative w-32">
+                    <div className="relative w-full sm:w-32">
                       <select
                         value={field.type}
                         onChange={(event) => handleTypeChange(event.target.value as FlexibleCostType, field.setType, field.setValue)}
@@ -461,7 +438,7 @@ export default function BusinessCalculatorView() {
         </div>
 
         <div className="space-y-4 xl:col-span-7">
-          <section className="rounded-2xl border border-emerald-100 bg-white p-6 shadow-sm">
+          <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm sm:p-6">
             <div className="mb-5 flex items-center gap-3">
               <span className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-100 text-sm font-bold text-emerald-700">3</span>
               <h2 className="font-bold text-slate-900">Target & Simulasi F&amp;B</h2>
@@ -533,10 +510,10 @@ export default function BusinessCalculatorView() {
             </div>
           </div>
 
-          <section className="rounded-2xl border border-emerald-100 bg-white p-6 shadow-sm">
+          <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm sm:p-6">
             <h3 className="mb-4 font-bold text-slate-900">Proporsi Keuangan Bisnis</h3>
-            <div className="flex flex-col items-center gap-6 md:flex-row">
-              <div className="flex items-center justify-center gap-6">
+            <div className="flex flex-col gap-6 md:flex-row md:items-center">
+              <div className="flex flex-col items-center justify-center gap-4 sm:flex-row sm:gap-6">
                 <div className="relative h-32 w-32">
                   {donutHasValue ? (
                     <svg viewBox="0 0 42 42" className="h-full w-full -rotate-90 rounded-full">
@@ -589,7 +566,7 @@ export default function BusinessCalculatorView() {
                   )}
                 </div>
 
-                <div className="flex flex-col gap-1.5 text-[10px]">
+                <div className="flex flex-col gap-1.5 text-[10px] sm:min-w-[9rem]">
                   <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-emerald-500"></span> Profit {pctProfit.toFixed(1)}%</div>
                   <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-red-500"></span> HPP {pctHpp.toFixed(1)}%</div>
                   <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-amber-500"></span> Gaji {pctGaji.toFixed(1)}%</div>
@@ -627,8 +604,8 @@ export default function BusinessCalculatorView() {
             </button>
 
             {showRincian ? (
-              <div className="w-full overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-sm">
-                <table className="w-full text-left text-sm">
+              <div className="w-full overflow-x-auto rounded-2xl border border-emerald-100 bg-white shadow-sm">
+                <table className="min-w-[560px] w-full text-left text-sm">
                   <thead className="border-b border-gray-100 bg-slate-50 text-slate-600">
                     <tr>
                       <th className="w-[40%] px-4 py-3 text-xs font-semibold">Komponen Biaya</th>

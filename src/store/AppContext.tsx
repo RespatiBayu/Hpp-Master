@@ -14,6 +14,7 @@ interface AppState {
   appUsers: AppUser[];
   activities: UserActivity[];
   user: AuthUser | null;
+  businessId: string | null;
   businessName: string | null;
   businessRole: BusinessRole | null;
   menuVisibility: MenuVisibility;
@@ -66,6 +67,7 @@ const emptyMenuVisibility = createDefaultMenuVisibility();
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [businessId, setBusinessId] = useState<string | null>(null);
   const [businessName, setBusinessName] = useState<string | null>(null);
   const [businessRole, setBusinessRole] = useState<BusinessRole | null>(null);
   const [menuVisibility, setMenuVisibility] = useState<MenuVisibility>(emptyMenuVisibility);
@@ -85,6 +87,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const resetState = () => {
     setUser(null);
+    setBusinessId(null);
     setBusinessName(null);
     setBusinessRole(null);
     setItems(emptyCollections.items);
@@ -100,6 +103,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const applyBootstrap = (payload: BootstrapPayload) => {
     setUser(payload.user);
+    setBusinessId(payload.business.id);
     setBusinessName(payload.business.name);
     setBusinessRole(payload.business.role);
     setItems(payload.items);
@@ -400,6 +404,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         appUsers,
         activities,
         user,
+        businessId,
         businessName,
         businessRole,
         menuVisibility,

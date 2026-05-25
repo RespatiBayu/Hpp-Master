@@ -65,11 +65,11 @@ export default function ProductionsView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Produksi & HPP</h1>
         <button
           onClick={() => setIsAdding(!isAdding)}
-          className="flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-500 transition-colors"
+          className="flex w-full items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-emerald-500 sm:w-auto"
         >
           <Plus className="mr-2 h-4 w-4" /> Catat Produksi
         </button>
@@ -102,7 +102,7 @@ export default function ProductionsView() {
           </div>
 
           <div className="border-t border-slate-100 pt-6">
-            <div className="flex items-center justify-between mb-4">
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <h3 className="block text-xs font-bold text-slate-500 uppercase">Penggunaan Bahan Baku</h3>
                 <button type="button" onClick={addRawUsageLine} className="text-xs font-bold text-emerald-600 hover:text-emerald-500 transition-colors">
                     + Tambah Bahan Baku
@@ -110,24 +110,24 @@ export default function ProductionsView() {
             </div>
             
             {rawUsage.map((usage, idx) => (
-                <div key={idx} className="flex items-center gap-4 mb-3">
+                <div key={idx} className="mb-3 flex flex-col gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3 sm:flex-row sm:items-center sm:gap-4">
                     <div className="flex-1">
                         <select required value={usage.id} onChange={e=>updateRawUsage(idx, 'id', e.target.value)} className="block w-full bg-slate-50 border-none rounded-xl p-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
                             {rawItems.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
                         </select>
                     </div>
-                    <div className="w-32">
+                    <div className="sm:w-32">
                         <input required type="number" min="0.01" step="any" value={usage.qty} onChange={e=>updateRawUsage(idx, 'qty', Number(e.target.value))} placeholder="Qty" className="block w-full bg-slate-50 border-none rounded-xl p-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
                     </div>
-                    <div className="text-sm text-slate-500 w-32 truncate font-medium">
+                    <div className="truncate text-sm font-medium text-slate-500 sm:w-32">
                         Rp {Math.round((stats[usage.id]?.avgCost || 0) * usage.qty).toLocaleString()}
                     </div>
-                    <button type="button" onClick={() => removeRawUsage(idx)} className="text-slate-400 hover:text-red-500 transition-colors p-2"><X className="w-5 h-5"/></button>
+                    <button type="button" onClick={() => removeRawUsage(idx)} className="self-end p-2 text-slate-400 transition-colors hover:text-red-500 sm:self-auto"><X className="w-5 h-5"/></button>
                 </div>
             ))}
           </div>
 
-          <div className="bg-slate-50 p-6 rounded-2xl flex justify-between items-center text-lg mt-4 border border-slate-100">
+          <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-slate-100 bg-slate-50 p-6 text-lg sm:flex-row sm:items-center sm:justify-between">
             <span className="font-bold text-slate-600">Total HPP Produksi (Estimasi)</span>
             <span className="font-bold text-emerald-600 text-2xl">Rp {Math.round(calculateCurrentHPP()).toLocaleString()}</span>
           </div>
@@ -137,42 +137,44 @@ export default function ProductionsView() {
              </div>
           )}
 
-          <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
-            <button type="button" onClick={() => setIsAdding(false)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-lg transition-colors">Batal</button>
-            <button type="submit" className="bg-emerald-600 px-6 py-2 text-sm font-bold text-white hover:bg-emerald-500 rounded-lg transition-colors">Simpan Produksi</button>
+          <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
+            <button type="button" onClick={() => setIsAdding(false)} className="rounded-lg px-4 py-2 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-50">Batal</button>
+            <button type="submit" className="rounded-lg bg-emerald-600 px-6 py-2 text-sm font-bold text-white transition-colors hover:bg-emerald-500">Simpan Produksi</button>
           </div>
         </form>
       )}
 
       <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm flex flex-col">
-          <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-white">
+          <div className="flex flex-col gap-2 border-b border-slate-50 bg-white p-6 sm:flex-row sm:items-center sm:justify-between">
             <h4 className="font-bold text-slate-900">Log Produksi Terakhir</h4>
           </div>
-        <table className="w-full text-left">
-          <thead className="bg-slate-50">
-            <tr>
-              <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Tanggal</th>
-              <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Barang Jadi</th>
-              <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Qty</th>
-              <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Biaya Pabrikasi</th>
-              <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Total HPP</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-50 bg-white">
-            {productions.map((p) => {
-              const item = items.find(i => i.id === p.finishedItemId);
-              return (
-                <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
-                  <td className="px-6 py-4 text-sm text-slate-900">{p.date}</td>
-                  <td className="px-6 py-4 text-sm font-medium text-slate-900">{item?.name || "-"}</td>
-                  <td className="px-6 py-4 text-sm text-right text-slate-500">{p.finishedQty} {item?.unit}</td>
-                  <td className="px-6 py-4 text-sm text-right text-slate-500">Rp {p.overheadCost.toLocaleString()}</td>
-                  <td className="px-6 py-4 text-sm text-right font-bold text-slate-900">Rp {p.totalHPP.toLocaleString()}</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="min-w-[720px] w-full text-left">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Tanggal</th>
+                <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Barang Jadi</th>
+                <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Qty</th>
+                <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Biaya Pabrikasi</th>
+                <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Total HPP</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50 bg-white">
+              {productions.map((p) => {
+                const item = items.find(i => i.id === p.finishedItemId);
+                return (
+                  <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-6 py-4 text-sm text-slate-900">{p.date}</td>
+                    <td className="px-6 py-4 text-sm font-medium text-slate-900">{item?.name || "-"}</td>
+                    <td className="px-6 py-4 text-sm text-right text-slate-500">{p.finishedQty} {item?.unit}</td>
+                    <td className="px-6 py-4 text-sm text-right text-slate-500">Rp {p.overheadCost.toLocaleString()}</td>
+                    <td className="px-6 py-4 text-sm text-right font-bold text-slate-900">Rp {p.totalHPP.toLocaleString()}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

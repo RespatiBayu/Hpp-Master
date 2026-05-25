@@ -92,9 +92,9 @@ export default function SalesView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Penjualan </h1>
-        <button onClick={() => setIsAdding(!isAdding)} className="flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-500 transition-colors">
+        <button onClick={() => setIsAdding(!isAdding)} className="flex w-full items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-emerald-500 sm:w-auto">
           <Plus className="mr-2 h-4 w-4" /> Catat Penjualan
         </button>
       </div>
@@ -122,9 +122,9 @@ export default function SalesView() {
               <input required type="number" min="0" step="any" value={totalRevenue} onChange={e=>setTotalRevenue(e.target.value)} className="w-full bg-slate-50 border-none rounded-xl p-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
             </div>
           </div>
-          <div className="mt-6 flex justify-end gap-2">
-            <button type="button" onClick={() => setIsAdding(false)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-lg transition-colors">Batal</button>
-            <button type="submit" className="bg-emerald-600 px-6 py-2 text-sm font-bold text-white hover:bg-emerald-500 rounded-lg transition-colors">Simpan</button>
+          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button type="button" onClick={() => setIsAdding(false)} className="rounded-lg px-4 py-2 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-50">Batal</button>
+            <button type="submit" className="rounded-lg bg-emerald-600 px-6 py-2 text-sm font-bold text-white transition-colors hover:bg-emerald-500">Simpan</button>
           </div>
         </form>
       )}
@@ -159,9 +159,9 @@ export default function SalesView() {
                   <input required type="number" min="0" step="any" value={editingSale.totalRevenue} onChange={e=>setEditingSale({...editingSale, totalRevenue: Number(e.target.value)})} className="w-full bg-slate-50 border-none rounded-xl p-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
                 </div>
               </div>
-              <div className="mt-8 flex justify-end gap-3 pt-6 border-t border-slate-100">
-                <button type="button" onClick={() => setEditingSale(null)} className="px-5 py-2.5 text-sm font-semibold text-slate-500 hover:bg-slate-50 rounded-xl transition-colors">Batal</button>
-                <button type="submit" className="bg-emerald-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 rounded-xl transition-colors shadow-sm">Simpan Perubahan</button>
+              <div className="mt-8 flex flex-col-reverse gap-3 border-t border-slate-100 pt-6 sm:flex-row sm:justify-end">
+                <button type="button" onClick={() => setEditingSale(null)} className="rounded-xl px-5 py-2.5 text-sm font-semibold text-slate-500 transition-colors hover:bg-slate-50">Batal</button>
+                <button type="submit" className="rounded-xl bg-emerald-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-500">Simpan Perubahan</button>
               </div>
             </form>
           </div>
@@ -176,16 +176,16 @@ export default function SalesView() {
             <p className="text-sm text-slate-600 mb-6">
               Apakah Anda yakin ingin menghapus data penjualan <strong>{saleToDelete.name}</strong>? Data ini akan hilang selamanya.
             </p>
-            <div className="flex justify-end gap-3">
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
                 onClick={() => setSaleToDelete(null)}
-                className="px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-50 rounded-lg transition-colors"
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500 transition-colors hover:bg-slate-50"
               >
                 Batal
               </button>
               <button
                 onClick={confirmDelete}
-                className="px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-500 rounded-lg transition-colors shadow-sm"
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-500"
               >
                 Ya, Hapus
               </button>
@@ -195,10 +195,10 @@ export default function SalesView() {
       )}
 
       <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-white shadow-sm flex flex-col">
-          <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-white">
+          <div className="flex flex-col gap-2 border-b border-slate-50 bg-white p-6 sm:flex-row sm:items-center sm:justify-between">
             <h4 className="font-bold text-slate-900">Riwayat Penjualan</h4>
           </div>
-        <table className="min-w-full text-left">
+        <table className="min-w-[720px] text-left">
           <thead className="bg-slate-50">
             <tr>
               <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Tanggal</th>

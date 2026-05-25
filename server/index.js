@@ -104,6 +104,8 @@ const mapMember = (row) => ({
   role: normalizeBusinessRole(row.role),
   createdAt: row.created_at,
   status: row.status,
+  businessId: row.business_id || undefined,
+  businessName: row.business_name || undefined,
 });
 
 const mapActivity = (row) => ({
@@ -232,7 +234,67 @@ const getPrimaryMembership = async (clientOrPool, userId) => {
   };
 };
 
-const loadBootstrap = async (businessId) => {
+const loadVisibleMembers = async (businessId, role) => {
+  if (normalizeBusinessRole(role) === "super_admin") {
+    return query(
+      `
+        select
+          bm.id,
+          coalesce(u.email, bm.invitation_email) as email,
+          bm.role,
+          bm.status,
+          bm.created_at,
+          bm.business_id,
+          b.name as business_name
+        from business_members bm
+        join businesses b on b.id = bm.business_id
+        left join users u on u.id = bm.user_id
+        order by
+          case
+            when bm.business_id = $1 then 0
+            else 1
+          end,
+          b.name asc,
+          case bm.role
+            when 'super_admin' then 0
+            when 'owner' then 0
+            when 'admin' then 1
+            else 2
+          end,
+          bm.created_at asc
+      `,
+      [businessId]
+    );
+  }
+
+  return query(
+    `
+      select
+        bm.id,
+        coalesce(u.email, bm.invitation_email) as email,
+        bm.role,
+        bm.status,
+        bm.created_at,
+        bm.business_id,
+        b.name as business_name
+      from business_members bm
+      join businesses b on b.id = bm.business_id
+      left join users u on u.id = bm.user_id
+      where bm.business_id = $1
+      order by
+        case bm.role
+          when 'super_admin' then 0
+          when 'owner' then 0
+          when 'admin' then 1
+          else 2
+        end,
+        bm.created_at asc
+    `,
+    [businessId]
+  );
+};
+
+const loadBootstrap = async (businessId, role) => {
   const [
     itemsResult,
     purchasesResult,
@@ -251,28 +313,7 @@ const loadBootstrap = async (businessId) => {
       query("select * from production_materials where business_id = $1", [businessId]),
       query("select * from sales where business_id = $1 order by date desc, created_at desc", [businessId]),
       query("select * from expenses where business_id = $1 order by date desc, created_at desc", [businessId]),
-      query(
-        `
-          select
-            bm.id,
-            coalesce(u.email, bm.invitation_email) as email,
-            bm.role,
-            bm.status,
-            bm.created_at
-          from business_members bm
-          left join users u on u.id = bm.user_id
-          where bm.business_id = $1
-          order by
-            case bm.role
-              when 'super_admin' then 0
-              when 'owner' then 0
-              when 'admin' then 1
-              else 2
-            end,
-            bm.created_at asc
-        `,
-        [businessId]
-      ),
+      loadVisibleMembers(businessId, role),
       query("select * from activity_logs where business_id = $1 order by created_at asc", [businessId]),
       loadBusinessMenuState(pool, businessId),
     ]);
@@ -593,7 +634,7 @@ app.get(
   "/api/bootstrap",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const payload = await loadBootstrap(req.auth.businessId);
+    const payload = await loadBootstrap(req.auth.businessId, req.auth.role);
     res.json({
       business: {
         id: req.auth.businessId,
@@ -941,7 +982,14 @@ app.post(
           `
             insert into business_members (id, business_id, user_id, role, status)
             values ($1, $2, $3, $4, 'active')
-            returning id, $5::text as email, role, status, created_at
+            returning
+              id,
+              $5::text as email,
+              role,
+              status,
+              created_at,
+              business_id,
+              (select name from businesses where id = business_members.business_id) as business_name
           `,
           [memberId, req.auth.businessId, existingUser.rows[0].id, role, email]
         );
@@ -965,7 +1013,14 @@ app.post(
           `
             insert into business_members (id, business_id, user_id, role, status)
             values ($1, $2, $3, $4, 'active')
-            returning id, $5::text as email, role, status, created_at
+            returning
+              id,
+              $5::text as email,
+              role,
+              status,
+              created_at,
+              business_id,
+              (select name from businesses where id = business_members.business_id) as business_name
           `,
           [memberId, req.auth.businessId, userId, role, email]
         );
@@ -977,7 +1032,14 @@ app.post(
         `
           insert into business_members (id, business_id, invitation_email, role, status)
           values ($1, $2, $3, $4, 'invited')
-          returning id, invitation_email as email, role, status, created_at
+          returning
+            id,
+            invitation_email as email,
+            role,
+            status,
+            created_at,
+            business_id,
+            (select name from businesses where id = business_members.business_id) as business_name
         `,
         [memberId, req.auth.businessId, email, role]
       );
@@ -1102,7 +1164,9 @@ app.put(
             coalesce((select email from users where id = business_members.user_id), business_members.invitation_email) as email,
             role,
             status,
-            created_at
+            created_at,
+            business_id,
+            (select name from businesses where id = business_members.business_id) as business_name
         `,
         [req.params.id, req.auth.businessId, role, userId, invitationEmail, status]
       );

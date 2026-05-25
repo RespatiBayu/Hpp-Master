@@ -40,6 +40,8 @@ Hpp-Master/
 │   │   ├── access.ts            # Rule izin role di frontend
 │   │   ├── menu-config.ts       # Definisi menu bisnis yang bisa ditampilkan
 │   │   └── types.ts             # Type model aplikasi
+│   ├── components/
+│   │   └── UserManagementSection.tsx
 │   └── views/
 │       ├── LoginView.tsx
 │       ├── Dashboard.tsx
@@ -48,7 +50,6 @@ Hpp-Master/
 │       ├── ProductionsView.tsx
 │       ├── SalesView.tsx
 │       ├── ExpensesView.tsx
-│       ├── UserView.tsx
 │       ├── AdminPanel.tsx
 │       └── BusinessCalculatorView.tsx
 ├── server/
@@ -126,7 +127,7 @@ Relasi utamanya:
 Role bisnis saat ini:
 
 - `super_admin`
-  Bisa menambah, mengubah, dan menghapus user `admin` maupun `staff`, serta membuka/menutup menu bisnis.
+  Bisa melihat user lintas bisnis, menambah, mengubah, dan menghapus user `admin` maupun `staff` pada bisnis aktif, serta membuka/menutup menu bisnis.
 - `admin`
   Bisa mengelola user `staff`.
 - `staff`
@@ -152,6 +153,7 @@ Catatan:
 - setiap data bisnis dipisahkan dengan `business_id`
 - user aktif selalu bekerja di dalam satu konteks bisnis
 - semua query CRUD dibatasi ke bisnis aktif
+- daftar user untuk `super_admin` dapat ditampilkan lintas bisnis sebagai ringkasan global
 
 ### Dashboard laba rugi
 
@@ -194,7 +196,8 @@ Catatan:
 
 ### Manajemen user bisnis
 
-- tambah admin atau staff dari halaman `User`
+- `super_admin` bisa melihat daftar user lintas bisnis
+- tambah admin atau staff dari `Admin Panel`
 - tambah user dengan password langsung agar akun aktif
 - buat user tanpa password agar status menjadi undangan
 - ubah role user
@@ -204,6 +207,7 @@ Catatan:
 ### Admin panel
 
 - ringkasan user dan aktivitas
+- manajemen user bisnis
 - log aktivitas sistem
 - kontrol visibilitas menu per bisnis
 
@@ -254,7 +258,7 @@ Catatan:
 
 ### 4. Saat super admin mengelola user
 
-1. Super admin membuka halaman `User`.
+1. Super admin membuka `Admin Panel`.
 2. Frontend mengirim request ke `/api/members` atau `/api/members/:id`.
 3. Backend memeriksa role aktif user.
 4. Backend membuat, mengubah, mengaktifkan, atau menghapus membership user bisnis.
@@ -301,7 +305,7 @@ PostgreSQL
 - Produksi:
   `ProductionsView` → `POST /api/productions` → insert ke `productions` dan `production_materials` dalam transaction
 - User bisnis:
-  `UserView` → `POST/PUT/DELETE /api/members` → update `users` dan/atau `business_members`
+  `AdminPanel` / `UserManagementSection` → `POST/PUT/DELETE /api/members` → update `users` dan/atau `business_members`
 - Visibilitas menu:
   `AdminPanel` → `PUT /api/business/menu-visibility/:menuKey` → upsert ke `business_menu_settings`
 
@@ -316,11 +320,11 @@ PostgreSQL
 - `server/migrations/001_init.sql`
   Menjelaskan seluruh model data bisnis.
 - `src/MainApp.tsx`
-  Shell aplikasi dan pengaturan menu/sidebar.
-- `src/views/UserView.tsx`
-  Manajemen user bisnis.
+  Shell aplikasi, sidebar, dan panel akun.
+- `src/components/UserManagementSection.tsx`
+  Tabel dan aksi pengelolaan user bisnis.
 - `src/views/AdminPanel.tsx`
-  Ringkasan admin dan kontrol menu bisnis.
+  Ringkasan admin, manajemen user, dan kontrol menu bisnis.
 
 ## Menjalankan Project
 

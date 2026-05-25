@@ -67,6 +67,8 @@ export interface AppUser {
   role: BusinessRole;
   createdAt: string;
   status?: MemberStatus;
+  businessId?: string;
+  businessName?: string;
 }
 
 export interface UserActivity {

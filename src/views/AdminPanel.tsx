@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { ActivitySquare, Check, Loader2, Pencil, Plus, Settings2, ShieldCheck, Trash2, Users } from "lucide-react";
 
+import UserManagementSection from "../components/UserManagementSection";
 import { canManageMenus, getRoleLabel } from "../lib/access";
 import { businessMenuDefinitions } from "../lib/menu-config";
 import type { AppMenuKey, BusinessMenuPackage, MenuVisibility } from "../lib/types";
@@ -8,6 +9,7 @@ import { useAppContext } from "../store/AppContext";
 
 export default function AdminPanel() {
   const {
+    businessId,
     businessName,
     businessRole,
     appUsers,
@@ -32,6 +34,10 @@ export default function AdminPanel() {
   const [deletingPackageId, setDeletingPackageId] = useState<string | null>(null);
 
   const activeMenuPackage = useMemo(() => menuPackages.find((menuPackage) => menuPackage.isActive) || null, [menuPackages]);
+  const totalVisibleBusinesses = useMemo(() => {
+    const ids = appUsers.map((user) => user.businessId || businessId || user.businessName || user.id);
+    return new Set(ids).size;
+  }, [appUsers, businessId]);
 
   const totalAdmins = appUsers.filter((user) => user.role === "admin").length;
   const totalSuperAdmins = appUsers.filter((user) => user.role === "super_admin").length;
@@ -132,7 +138,7 @@ export default function AdminPanel() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Admin Panel</h1>
           <p className="mt-1 text-sm text-slate-500">
@@ -147,7 +153,14 @@ export default function AdminPanel() {
             <div className="mr-3 rounded-lg bg-purple-50 p-2 text-purple-600">
               <Users className="h-5 w-5" />
             </div>
-            <h2 className="text-lg font-bold text-slate-900">Ringkasan Pengguna</h2>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">{businessRole === "super_admin" ? "Ringkasan Pengguna Lintas Bisnis" : "Ringkasan Pengguna"}</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                {businessRole === "super_admin"
+                  ? `Karena role Anda Super Admin, data pengguna dirangkum dari ${totalVisibleBusinesses} bisnis yang dapat Anda lihat.`
+                  : "Ringkasan ini hanya menampilkan user dalam bisnis aktif."}
+              </p>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
@@ -193,9 +206,11 @@ export default function AdminPanel() {
         </div>
       </div>
 
+      <UserManagementSection />
+
       <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <div className="flex items-center">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start">
             <div className="mr-3 rounded-lg bg-sky-50 p-2 text-sky-600">
               <Settings2 className="h-5 w-5" />
             </div>
@@ -210,7 +225,7 @@ export default function AdminPanel() {
             <button
               type="button"
               onClick={openCreatePackageForm}
-              className="inline-flex items-center rounded-lg bg-sky-50 px-3 py-2 text-sm font-bold text-sky-700 transition-colors hover:bg-sky-100"
+              className="inline-flex w-full items-center justify-center rounded-lg bg-sky-50 px-3 py-2 text-sm font-bold text-sky-700 transition-colors hover:bg-sky-100 sm:w-auto"
             >
               <Plus className="mr-1 h-4 w-4" /> Buat Paket
             </button>
@@ -240,7 +255,7 @@ export default function AdminPanel() {
 
         {isPackageFormOpen && canManageMenus(businessRole) && (
           <form onSubmit={handleSubmitPackage} className="mb-6 rounded-2xl border border-sky-100 bg-sky-50/60 p-5">
-            <div className="mb-4 flex items-center justify-between gap-4">
+            <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h3 className="text-base font-bold text-slate-900">{editingPackageId ? "Ubah Paket Menu" : "Buat Paket Menu Baru"}</h3>
                 <p className="mt-1 text-sm text-slate-500">Pilih kombinasi menu yang akan dibundel dalam satu paket akses.</p>
@@ -304,11 +319,11 @@ export default function AdminPanel() {
               })}
             </div>
 
-            <div className="mt-5 flex justify-end">
+            <div className="mt-5 flex sm:justify-end">
               <button
                 type="submit"
                 disabled={isSavingPackage}
-                className="inline-flex items-center rounded-xl bg-sky-600 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-70"
+                className="inline-flex w-full items-center justify-center rounded-xl bg-sky-600 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
               >
                 {isSavingPackage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 {editingPackageId ? "Simpan Perubahan Paket" : "Simpan Paket Menu"}
@@ -330,7 +345,7 @@ export default function AdminPanel() {
 
               return (
                 <div key={menuPackage.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-5">
-                  <div className="flex items-start justify-between gap-4">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <div className="flex items-center gap-2">
                         <h3 className="text-base font-bold text-slate-900">{menuPackage.name}</h3>
@@ -385,12 +400,12 @@ export default function AdminPanel() {
                   </div>
 
                   {canManageMenus(businessRole) ? (
-                    <div className="mt-5 flex justify-end">
+                    <div className="mt-5 flex sm:justify-end">
                       <button
                         type="button"
                         disabled={menuPackage.isActive || isApplying}
                         onClick={() => void handleApplyPackage(menuPackage.id)}
-                        className={`inline-flex items-center rounded-xl px-4 py-2.5 text-sm font-bold transition-colors ${
+                        className={`inline-flex w-full items-center justify-center rounded-xl px-4 py-2.5 text-sm font-bold transition-colors sm:w-auto ${
                           menuPackage.isActive
                             ? "cursor-default bg-emerald-100 text-emerald-700"
                             : "bg-slate-900 text-white hover:bg-slate-800"
@@ -409,8 +424,8 @@ export default function AdminPanel() {
       </div>
 
       <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <div className="flex items-center">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start">
             <div className="mr-3 rounded-lg bg-sky-50 p-2 text-sky-600">
               <Settings2 className="h-5 w-5" />
             </div>
@@ -477,7 +492,7 @@ export default function AdminPanel() {
         </div>
 
         <div className="overflow-x-auto rounded-xl border border-slate-100">
-          <table className="min-w-full divide-y divide-slate-100">
+          <table className="min-w-[820px] divide-y divide-slate-100">
             <thead className="bg-slate-50">
               <tr>
                 <th className="w-40 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Waktu</th>
