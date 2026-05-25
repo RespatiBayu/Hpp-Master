@@ -22,13 +22,13 @@ const sessionCookieOptions = {
 
 const normalizeBusinessRole = (role) => (role === "owner" ? "super_admin" : role);
 
-const isManagedRole = (role) => ["admin", "staff"].includes(normalizeBusinessRole(role));
+const isManagedRole = (role) => ["super_admin", "admin", "staff"].includes(normalizeBusinessRole(role));
 
 const canAssignRole = (actorRole, targetRole) => {
   const actor = normalizeBusinessRole(actorRole);
   const target = normalizeBusinessRole(targetRole);
 
-  if (actor === "super_admin") return target === "admin" || target === "staff";
+  if (actor === "super_admin") return target === "super_admin" || target === "admin" || target === "staff";
   if (actor === "admin") return target === "staff";
   return false;
 };
@@ -37,7 +37,7 @@ const canManageMemberRole = (actorRole, targetRole) => {
   const actor = normalizeBusinessRole(actorRole);
   const target = normalizeBusinessRole(targetRole);
 
-  if (actor === "super_admin") return target === "admin" || target === "staff";
+  if (actor === "super_admin") return target === "super_admin" || target === "admin" || target === "staff";
   if (actor === "admin") return target === "staff";
   return false;
 };
@@ -106,6 +106,11 @@ const mapMember = (row) => ({
   status: row.status,
   businessId: row.business_id || undefined,
   businessName: row.business_name || undefined,
+});
+
+const mapBusiness = (row) => ({
+  id: row.id,
+  name: row.name,
 });
 
 const mapActivity = (row) => ({
@@ -294,8 +299,29 @@ const loadVisibleMembers = async (businessId, role) => {
   );
 };
 
+const loadVisibleBusinesses = async (businessId, role) => {
+  if (normalizeBusinessRole(role) === "super_admin") {
+    return query(
+      `
+        select id, name
+        from businesses
+        order by
+          case
+            when id = $1 then 0
+            else 1
+          end,
+          name asc
+      `,
+      [businessId]
+    );
+  }
+
+  return query("select id, name from businesses where id = $1 limit 1", [businessId]);
+};
+
 const loadBootstrap = async (businessId, role) => {
   const [
+    businessesResult,
     itemsResult,
     purchasesResult,
     productionsResult,
@@ -307,6 +333,7 @@ const loadBootstrap = async (businessId, role) => {
     menuState,
   ] =
     await Promise.all([
+      loadVisibleBusinesses(businessId, role),
       query("select * from items where business_id = $1 order by created_at asc", [businessId]),
       query("select * from purchases where business_id = $1 order by date desc, created_at desc", [businessId]),
       query("select * from productions where business_id = $1 order by date desc, created_at desc", [businessId]),
@@ -319,6 +346,7 @@ const loadBootstrap = async (businessId, role) => {
     ]);
 
   return {
+    businesses: businessesResult.rows.map(mapBusiness),
     items: itemsResult.rows.map(mapItem),
     purchases: purchasesResult.rows.map(mapPurchase),
     productions: productionsResult.rows.map((row) => mapProduction(row, productionMaterialsResult.rows)),
@@ -934,9 +962,16 @@ app.post(
     const email = typeof req.body.email === "string" ? normalizeEmail(req.body.email) : "";
     const role = normalizeBusinessRole(typeof req.body.role === "string" ? req.body.role : "staff");
     const password = typeof req.body.password === "string" ? req.body.password : "";
+    const requestedBusinessId = typeof req.body.businessId === "string" ? req.body.businessId.trim() : "";
+    const targetBusinessId = req.auth.role === "super_admin" ? requestedBusinessId || req.auth.businessId : req.auth.businessId;
 
     if (!email) {
       sendError(res, 400, "Email user wajib diisi.");
+      return;
+    }
+
+    if (!targetBusinessId) {
+      sendError(res, 400, "Bisnis target wajib dipilih.");
       return;
     }
 
@@ -956,6 +991,14 @@ app.post(
     }
 
     const created = await withTransaction(async (client) => {
+      const businessResult = await client.query("select id from businesses where id = $1 limit 1", [targetBusinessId]);
+
+      if (businessResult.rowCount === 0) {
+        const error = new Error("Bisnis target tidak ditemukan.");
+        error.status = 404;
+        throw error;
+      }
+
       const duplicate = await client.query(
         `
           select bm.id
@@ -965,11 +1008,11 @@ app.post(
             and (u.email = $2 or bm.invitation_email = $2)
           limit 1
         `,
-        [req.auth.businessId, email]
+        [targetBusinessId, email]
       );
 
       if (duplicate.rowCount > 0) {
-        const error = new Error("User dengan email ini sudah terdaftar di bisnis Anda.");
+        const error = new Error("User dengan email ini sudah terdaftar di bisnis target.");
         error.status = 409;
         throw error;
       }
@@ -991,7 +1034,7 @@ app.post(
               business_id,
               (select name from businesses where id = business_members.business_id) as business_name
           `,
-          [memberId, req.auth.businessId, existingUser.rows[0].id, role, email]
+          [memberId, targetBusinessId, existingUser.rows[0].id, role, email]
         );
 
         return mapMember(result.rows[0]);
@@ -1022,7 +1065,7 @@ app.post(
               business_id,
               (select name from businesses where id = business_members.business_id) as business_name
           `,
-          [memberId, req.auth.businessId, userId, role, email]
+          [memberId, targetBusinessId, userId, role, email]
         );
 
         return mapMember(result.rows[0]);
@@ -1041,7 +1084,7 @@ app.post(
             business_id,
             (select name from businesses where id = business_members.business_id) as business_name
         `,
-        [memberId, req.auth.businessId, email, role]
+        [memberId, targetBusinessId, email, role]
       );
 
       return mapMember(result.rows[0]);
@@ -1075,14 +1118,16 @@ app.put(
     }
 
     const updated = await withTransaction(async (client) => {
+      const memberScopeParams = req.auth.role === "super_admin" ? [req.params.id] : [req.params.id, req.auth.businessId];
       const memberResult = await client.query(
         `
-          select id, role, status, user_id, invitation_email
+          select id, role, status, user_id, invitation_email, business_id
           from business_members
-          where id = $1 and business_id = $2
+          where id = $1
+            ${req.auth.role === "super_admin" ? "" : "and business_id = $2"}
           limit 1
         `,
-        [req.params.id, req.auth.businessId]
+        memberScopeParams
       );
 
       if (memberResult.rowCount === 0) {
@@ -1095,6 +1140,7 @@ app.put(
         ...memberResult.rows[0],
         role: normalizeBusinessRole(memberResult.rows[0].role),
       };
+      const targetBusinessId = member.business_id;
 
       if (!canManageMemberRole(req.auth.role, member.role)) {
         const error = new Error("Anda tidak memiliki izin untuk mengubah user ini.");
@@ -1168,7 +1214,7 @@ app.put(
             business_id,
             (select name from businesses where id = business_members.business_id) as business_name
         `,
-        [req.params.id, req.auth.businessId, role, userId, invitationEmail, status]
+        [req.params.id, targetBusinessId, role, userId, invitationEmail, status]
       );
 
       return mapMember(result.rows[0]);
@@ -1183,14 +1229,16 @@ app.delete(
   requireAuth,
   requireRole("super_admin", "admin"),
   asyncHandler(async (req, res) => {
+    const memberScopeParams = req.auth.role === "super_admin" ? [req.params.id] : [req.params.id, req.auth.businessId];
     const memberResult = await query(
       `
-        select id, role, user_id
+        select id, role, user_id, business_id
         from business_members
-        where id = $1 and business_id = $2
+        where id = $1
+          ${req.auth.role === "super_admin" ? "" : "and business_id = $2"}
         limit 1
       `,
-      [req.params.id, req.auth.businessId]
+      memberScopeParams
     );
 
     if (memberResult.rowCount === 0) {
@@ -1199,6 +1247,7 @@ app.delete(
     }
 
     const member = memberResult.rows[0];
+    const targetBusinessId = member.business_id;
 
     if (!canManageMemberRole(req.auth.role, member.role)) {
       sendError(res, 403, "Anda tidak memiliki izin untuk menghapus user ini.");
@@ -1210,7 +1259,7 @@ app.delete(
       return;
     }
 
-    await query("delete from business_members where id = $1 and business_id = $2", [req.params.id, req.auth.businessId]);
+    await query("delete from business_members where id = $1 and business_id = $2", [req.params.id, targetBusinessId]);
     res.json({ ok: true });
   })
 );

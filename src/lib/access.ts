@@ -11,13 +11,13 @@ export const canManageUsers = (role: BusinessRole | null) => role === "super_adm
 export const canManageMenus = (role: BusinessRole | null) => role === "super_admin";
 
 export const getAssignableRoles = (role: BusinessRole | null): BusinessRole[] => {
-  if (role === "super_admin") return ["admin", "staff"];
+  if (role === "super_admin") return ["super_admin", "admin", "staff"];
   if (role === "admin") return ["staff"];
   return [];
 };
 
 export const canManageMember = (actorRole: BusinessRole | null, targetRole: BusinessRole) => {
-  if (actorRole === "super_admin") return targetRole === "admin" || targetRole === "staff";
+  if (actorRole === "super_admin") return targetRole === "super_admin" || targetRole === "admin" || targetRole === "staff";
   if (actorRole === "admin") return targetRole === "staff";
   return false;
 };

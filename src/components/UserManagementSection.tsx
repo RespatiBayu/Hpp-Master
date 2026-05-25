@@ -12,16 +12,33 @@ const roleBadgeClass: Record<BusinessRole, string> = {
 };
 
 export default function UserManagementSection() {
-  const { businessId, businessName, businessRole, appUsers, addAppUser, updateAppUser, deleteAppUser } = useAppContext();
+  const { businessId, businessName, businessRole, businesses, appUsers, addAppUser, updateAppUser, deleteAppUser } = useAppContext();
 
   const canManageBusinessUsers = canManageUsers(businessRole);
   const isGlobalUserList = businessRole === "super_admin";
   const assignableRoles = useMemo(() => getAssignableRoles(businessRole), [businessRole]);
   const defaultRole = assignableRoles[0] || "staff";
+  const availableBusinesses = useMemo(() => {
+    if (businesses.length > 0) return businesses;
+    const mapped = new Map<string, string>();
+
+    for (const member of appUsers) {
+      if (member.businessId && member.businessName && !mapped.has(member.businessId)) {
+        mapped.set(member.businessId, member.businessName);
+      }
+    }
+
+    if (businessId && businessName && !mapped.has(businessId)) {
+      mapped.set(businessId, businessName);
+    }
+
+    return Array.from(mapped.entries()).map(([id, name]) => ({ id, name }));
+  }, [appUsers, businessId, businessName, businesses]);
 
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState<BusinessRole>(defaultRole);
+  const [newBusinessId, setNewBusinessId] = useState(businessId || "");
   const [newPassword, setNewPassword] = useState("");
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
   const [editRole, setEditRole] = useState<BusinessRole>(defaultRole);
@@ -32,13 +49,25 @@ export default function UserManagementSection() {
     setNewRole(defaultRole);
   }, [defaultRole]);
 
+  useEffect(() => {
+    if (!isGlobalUserList) {
+      setNewBusinessId(businessId || "");
+      return;
+    }
+
+    const preferredBusinessId = businessId || availableBusinesses[0]?.id || "";
+    setNewBusinessId((current) => (current && availableBusinesses.some((business) => business.id === current) ? current : preferredBusinessId));
+  }, [availableBusinesses, businessId, isGlobalUserList]);
+
   const handleAddUser = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!newEmail) return;
+    if (isGlobalUserList && !newBusinessId) return;
 
-    await addAppUser(newEmail, newRole, newPassword || undefined);
+    await addAppUser(newEmail, newRole, newPassword || undefined, isGlobalUserList ? newBusinessId : undefined);
     setNewEmail("");
     setNewRole(defaultRole);
+    setNewBusinessId(businessId || availableBusinesses[0]?.id || "");
     setNewPassword("");
     setIsAddingUser(false);
   };
@@ -76,7 +105,7 @@ export default function UserManagementSection() {
               <h2 className="text-lg font-bold text-slate-900">{isGlobalUserList ? "Manajemen User Lintas Bisnis" : "Manajemen User"}</h2>
               <p className="mt-1 text-sm text-slate-500">
                 {isGlobalUserList
-                  ? "Super admin bisa melihat seluruh user lintas bisnis. Aksi kelola tetap dibatasi ke bisnis aktif."
+                  ? "Super admin sebagai pemilik platform bisa membuat, mengubah, dan menghapus user di semua bisnis."
                   : "Super admin bisa mengelola admin dan staff. Admin hanya bisa mengelola staff."}
               </p>
             </div>
@@ -102,7 +131,13 @@ export default function UserManagementSection() {
         {isAddingUser && canManageBusinessUsers && (
           <form onSubmit={handleAddUser} className="mb-6 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
             <h3 className="mb-3 text-sm font-bold text-slate-900">Tambah User Baru</h3>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1.7fr)_minmax(0,0.8fr)_minmax(0,1fr)_auto]">
+            <div
+              className={`grid grid-cols-1 gap-3 ${
+                isGlobalUserList
+                  ? "md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1fr)_auto]"
+                  : "md:grid-cols-[minmax(0,1.7fr)_minmax(0,0.8fr)_minmax(0,1fr)_auto]"
+              }`}
+            >
               <input
                 type="email"
                 required
@@ -122,6 +157,23 @@ export default function UserManagementSection() {
                   </option>
                 ))}
               </select>
+              {isGlobalUserList ? (
+                <select
+                  required
+                  value={newBusinessId}
+                  onChange={(event) => setNewBusinessId(event.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  <option value="" disabled>
+                    Pilih Bisnis
+                  </option>
+                  {availableBusinesses.map((business) => (
+                    <option key={business.id} value={business.id}>
+                      {business.name}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
               <input
                 type="password"
                 minLength={6}
@@ -136,7 +188,11 @@ export default function UserManagementSection() {
             </div>
             <p className="mt-2 text-xs leading-relaxed text-slate-500">
               Isi password jika akun ingin langsung aktif. Jika dikosongkan, user akan tersimpan sebagai undangan dan bisa diaktifkan nanti dari panel ini.
-              {businessName ? ` User baru akan ditambahkan ke bisnis aktif: ${businessName}.` : ""}
+              {isGlobalUserList
+                ? ` User baru akan ditambahkan ke bisnis ${availableBusinesses.find((business) => business.id === newBusinessId)?.name || "yang dipilih"}.`
+                : businessName
+                  ? ` User baru akan ditambahkan ke bisnis aktif: ${businessName}.`
+                  : ""}
             </p>
           </form>
         )}
@@ -165,7 +221,7 @@ export default function UserManagementSection() {
               ) : (
                 appUsers.map((member) => {
                   const isCurrentBusinessMember = !member.businessId || member.businessId === businessId;
-                  const canManageThisMember = isCurrentBusinessMember && canManageMember(businessRole, member.role);
+                  const canManageThisMember = canManageMember(businessRole, member.role);
 
                   return (
                     <tr key={member.id}>
@@ -218,7 +274,7 @@ export default function UserManagementSection() {
                             </button>
                           </div>
                         ) : (
-                          <span className="text-xs font-semibold text-slate-300">{isGlobalUserList && !isCurrentBusinessMember ? "Bisnis lain" : "-"}</span>
+                          <span className="text-xs font-semibold text-slate-300">-</span>
                         )}
                       </td>
                     </tr>
@@ -239,6 +295,14 @@ export default function UserManagementSection() {
             </p>
 
             <form onSubmit={handleUpdateUser} className="space-y-4">
+              {editingUser.businessName ? (
+                <div>
+                  <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Bisnis</label>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium text-slate-700">
+                    {editingUser.businessName}
+                  </div>
+                </div>
+              ) : null}
               <div>
                 <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Role</label>
                 <select

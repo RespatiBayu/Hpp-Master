@@ -1,4 +1,4 @@
-import type { AppMenuKey, AppUser, BusinessMenuPackage, BusinessRole, Expense, Item, MenuVisibility, Production, Purchase, Sale, UserActivity } from "./types";
+import type { AppMenuKey, AppUser, BusinessMenuPackage, BusinessRole, BusinessSummary, Expense, Item, MenuVisibility, Production, Purchase, Sale, UserActivity } from "./types";
 
 export interface ApiAuthUser {
   id: string;
@@ -16,6 +16,7 @@ export interface BusinessContext {
 export interface BootstrapPayload {
   user: ApiAuthUser;
   business: BusinessContext;
+  businesses: BusinessSummary[];
   items: Item[];
   purchases: Purchase[];
   productions: Production[];
@@ -143,10 +144,10 @@ export const appApi = {
       }),
   },
   members: {
-    create: (email: string, role: BusinessRole, password?: string) =>
+    create: (email: string, role: BusinessRole, password?: string, businessId?: string) =>
       apiFetch<AppUser>("/api/members", {
         method: "POST",
-        body: JSON.stringify({ email, role, password }),
+        body: JSON.stringify({ email, role, password, businessId }),
       }),
     update: (id: string, role: BusinessRole, password?: string) =>
       apiFetch<AppUser>(`/api/members/${id}`, {

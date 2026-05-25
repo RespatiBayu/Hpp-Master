@@ -71,6 +71,11 @@ export interface AppUser {
   businessName?: string;
 }
 
+export interface BusinessSummary {
+  id: string;
+  name: string;
+}
+
 export interface UserActivity {
   id: string;
   timestamp: string;

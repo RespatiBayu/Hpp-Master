@@ -127,7 +127,7 @@ Relasi utamanya:
 Role bisnis saat ini:
 
 - `super_admin`
-  Bisa melihat user lintas bisnis, menambah, mengubah, dan menghapus user `admin` maupun `staff` pada bisnis aktif, serta membuka/menutup menu bisnis.
+  Berperan sebagai pemilik platform. Bisa melihat user lintas bisnis, serta menambah, mengubah, dan menghapus user `super_admin`, `admin`, maupun `staff` di bisnis mana pun, sekaligus membuka/menutup menu bisnis pada bisnis aktif.
 - `admin`
   Bisa mengelola user `staff`.
 - `staff`
@@ -152,8 +152,8 @@ Catatan:
 
 - setiap data bisnis dipisahkan dengan `business_id`
 - user aktif selalu bekerja di dalam satu konteks bisnis
-- semua query CRUD dibatasi ke bisnis aktif
-- daftar user untuk `super_admin` dapat ditampilkan lintas bisnis sebagai ringkasan global
+- semua query CRUD bisnis dibatasi ke bisnis aktif, kecuali pengelolaan user oleh `super_admin`
+- daftar user untuk `super_admin` dapat ditampilkan dan dikelola lintas bisnis
 
 ### Dashboard laba rugi
 
@@ -196,8 +196,9 @@ Catatan:
 
 ### Manajemen user bisnis
 
-- `super_admin` bisa melihat daftar user lintas bisnis
-- tambah admin atau staff dari `Admin Panel`
+- `super_admin` bisa melihat, membuat, mengubah, dan menghapus user lintas bisnis
+- `super_admin` bisa memilih bisnis target saat menambah user dari `Admin Panel`
+- `super_admin` bisa mengelola role `super_admin`, `admin`, dan `staff`
 - tambah user dengan password langsung agar akun aktif
 - buat user tanpa password agar status menjadi undangan
 - ubah role user
@@ -260,8 +261,8 @@ Catatan:
 
 1. Super admin membuka `Admin Panel`.
 2. Frontend mengirim request ke `/api/members` atau `/api/members/:id`.
-3. Backend memeriksa role aktif user.
-4. Backend membuat, mengubah, mengaktifkan, atau menghapus membership user bisnis.
+3. Backend memeriksa role aktif user dan menentukan bisnis target jika diperlukan.
+4. Backend membuat, mengubah, mengaktifkan, atau menghapus membership user bisnis, termasuk lintas bisnis untuk `super_admin`.
 5. Jika password diberikan untuk user baru atau undangan, backend juga membuat atau memperbarui record di tabel `users`.
 6. Frontend memperbarui daftar user bisnis dan mencatat log aktivitas.
 
