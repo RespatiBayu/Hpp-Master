@@ -1,4 +1,19 @@
-import type { AppMenuKey, AppUser, BusinessMenuPackage, BusinessRole, BusinessSummary, Expense, Item, MenuVisibility, Production, Purchase, Sale, UserActivity } from "./types";
+import type {
+  AppMenuKey,
+  AppUser,
+  BulkUserUploadResult,
+  BulkUserUploadRow,
+  BusinessMenuPackage,
+  BusinessRole,
+  BusinessSummary,
+  Expense,
+  Item,
+  MenuVisibility,
+  Production,
+  Purchase,
+  Sale,
+  UserActivity,
+} from "./types";
 
 export interface ApiAuthUser {
   id: string;
@@ -148,6 +163,11 @@ export const appApi = {
       apiFetch<AppUser>("/api/members", {
         method: "POST",
         body: JSON.stringify({ email, role, password, businessId }),
+      }),
+    bulkCreate: (rows: BulkUserUploadRow[], defaultBusinessId?: string) =>
+      apiFetch<BulkUserUploadResult>("/api/members/bulk", {
+        method: "POST",
+        body: JSON.stringify({ rows, defaultBusinessId }),
       }),
     update: (id: string, role: BusinessRole, password?: string) =>
       apiFetch<AppUser>(`/api/members/${id}`, {

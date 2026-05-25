@@ -20,7 +20,14 @@ const sessionCookieOptions = {
   path: "/",
 };
 
-const normalizeBusinessRole = (role) => (role === "owner" ? "super_admin" : role);
+const normalizeBusinessRole = (role) => {
+  if (typeof role !== "string") return role;
+
+  const normalized = role.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (normalized === "owner" || normalized === "superadmin") return "super_admin";
+
+  return normalized;
+};
 
 const isManagedRole = (role) => ["super_admin", "admin", "staff"].includes(normalizeBusinessRole(role));
 
@@ -132,6 +139,191 @@ const mapMenuPackage = (row) => ({
 });
 
 const buildDisplayNameFromEmail = (email) => email.split("@")[0] || "User";
+
+const createHttpError = (status, message) => {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+};
+
+const resolveManagedBusiness = async (client, actorRole, actorBusinessId, options = {}) => {
+  const requestedBusinessId = typeof options.requestedBusinessId === "string" ? options.requestedBusinessId.trim() : "";
+  const requestedBusinessName = typeof options.requestedBusinessName === "string" ? options.requestedBusinessName.trim() : "";
+  const fallbackBusinessId = typeof options.fallbackBusinessId === "string" ? options.fallbackBusinessId.trim() : "";
+
+  if (normalizeBusinessRole(actorRole) !== "super_admin") {
+    if (!actorBusinessId) {
+      throw createHttpError(400, "Bisnis target wajib dipilih.");
+    }
+
+    const businessResult = await client.query("select id, name from businesses where id = $1 limit 1", [actorBusinessId]);
+    if (businessResult.rowCount === 0) {
+      throw createHttpError(404, "Bisnis target tidak ditemukan.");
+    }
+
+    return businessResult.rows[0];
+  }
+
+  if (requestedBusinessId) {
+    const businessResult = await client.query("select id, name from businesses where id = $1 limit 1", [requestedBusinessId]);
+    if (businessResult.rowCount === 0) {
+      throw createHttpError(404, "Bisnis target tidak ditemukan.");
+    }
+
+    return businessResult.rows[0];
+  }
+
+  if (requestedBusinessName) {
+    const businessResult = await client.query(
+      `
+        select id, name
+        from businesses
+        where lower(name) = lower($1)
+        order by created_at asc
+        limit 2
+      `,
+      [requestedBusinessName]
+    );
+
+    if (businessResult.rowCount === 0) {
+      throw createHttpError(404, `Bisnis "${requestedBusinessName}" tidak ditemukan.`);
+    }
+
+    if (businessResult.rowCount > 1) {
+      throw createHttpError(409, `Nama bisnis "${requestedBusinessName}" tidak unik. Gunakan business_id.`);
+    }
+
+    return businessResult.rows[0];
+  }
+
+  const targetBusinessId = fallbackBusinessId || actorBusinessId;
+  if (!targetBusinessId) {
+    throw createHttpError(400, "Bisnis target wajib dipilih.");
+  }
+
+  const businessResult = await client.query("select id, name from businesses where id = $1 limit 1", [targetBusinessId]);
+  if (businessResult.rowCount === 0) {
+    throw createHttpError(404, "Bisnis target tidak ditemukan.");
+  }
+
+  return businessResult.rows[0];
+};
+
+const createBusinessMemberRecord = async (client, payload) => {
+  const email = typeof payload.email === "string" ? normalizeEmail(payload.email) : "";
+  const requestedRole = normalizeBusinessRole(typeof payload.role === "string" ? payload.role : "");
+  const role = requestedRole || "staff";
+  const password = typeof payload.password === "string" ? payload.password : "";
+  const targetBusiness = await resolveManagedBusiness(client, payload.actorRole, payload.actorBusinessId, {
+    requestedBusinessId: payload.requestedBusinessId,
+    requestedBusinessName: payload.requestedBusinessName,
+    fallbackBusinessId: payload.fallbackBusinessId,
+  });
+
+  if (!email) {
+    throw createHttpError(400, "Email user wajib diisi.");
+  }
+
+  if (!isManagedRole(role)) {
+    throw createHttpError(400, "Role user tidak valid.");
+  }
+
+  if (!canAssignRole(payload.actorRole, role)) {
+    throw createHttpError(403, "Anda tidak memiliki izin untuk membuat role user tersebut.");
+  }
+
+  if (password && password.length < 6) {
+    throw createHttpError(400, "Kata sandi minimal 6 karakter.");
+  }
+
+  const duplicate = await client.query(
+    `
+      select bm.id
+      from business_members bm
+      left join users u on u.id = bm.user_id
+      where bm.business_id = $1
+        and (u.email = $2 or bm.invitation_email = $2)
+      limit 1
+    `,
+    [targetBusiness.id, email]
+  );
+
+  if (duplicate.rowCount > 0) {
+    throw createHttpError(409, "User dengan email ini sudah terdaftar di bisnis target.");
+  }
+
+  const existingUser = await client.query("select id from users where email = $1 limit 1", [email]);
+  const memberId = randomId("mem_");
+
+  if (existingUser.rowCount > 0) {
+    const result = await client.query(
+      `
+        insert into business_members (id, business_id, user_id, role, status)
+        values ($1, $2, $3, $4, 'active')
+        returning
+          id,
+          $5::text as email,
+          role,
+          status,
+          created_at,
+          business_id,
+          $6::text as business_name
+      `,
+      [memberId, targetBusiness.id, existingUser.rows[0].id, role, email, targetBusiness.name]
+    );
+
+    return mapMember(result.rows[0]);
+  }
+
+  if (password) {
+    const userId = randomId("usr_");
+    const passwordHash = await hashPassword(password);
+
+    await client.query(
+      `
+        insert into users (id, email, password_hash, display_name)
+        values ($1, $2, $3, $4)
+      `,
+      [userId, email, passwordHash, buildDisplayNameFromEmail(email)]
+    );
+
+    const result = await client.query(
+      `
+        insert into business_members (id, business_id, user_id, role, status)
+        values ($1, $2, $3, $4, 'active')
+        returning
+          id,
+          $5::text as email,
+          role,
+          status,
+          created_at,
+          business_id,
+          $6::text as business_name
+      `,
+      [memberId, targetBusiness.id, userId, role, email, targetBusiness.name]
+    );
+
+    return mapMember(result.rows[0]);
+  }
+
+  const result = await client.query(
+    `
+      insert into business_members (id, business_id, invitation_email, role, status)
+      values ($1, $2, $3, $4, 'invited')
+      returning
+        id,
+        invitation_email as email,
+        role,
+        status,
+        created_at,
+        business_id,
+        $5::text as business_name
+    `,
+    [memberId, targetBusiness.id, email, role, targetBusiness.name]
+  );
+
+  return mapMember(result.rows[0]);
+};
 
 const upsertBusinessMenuVisibility = async (client, businessId, menuVisibility) => {
   for (const menu of businessMenuDefinitions) {
@@ -959,138 +1151,81 @@ app.post(
   requireAuth,
   requireRole("super_admin", "admin"),
   asyncHandler(async (req, res) => {
-    const email = typeof req.body.email === "string" ? normalizeEmail(req.body.email) : "";
-    const role = normalizeBusinessRole(typeof req.body.role === "string" ? req.body.role : "staff");
-    const password = typeof req.body.password === "string" ? req.body.password : "";
-    const requestedBusinessId = typeof req.body.businessId === "string" ? req.body.businessId.trim() : "";
-    const targetBusinessId = req.auth.role === "super_admin" ? requestedBusinessId || req.auth.businessId : req.auth.businessId;
-
-    if (!email) {
-      sendError(res, 400, "Email user wajib diisi.");
-      return;
-    }
-
-    if (!targetBusinessId) {
-      sendError(res, 400, "Bisnis target wajib dipilih.");
-      return;
-    }
-
-    if (!isManagedRole(role)) {
-      sendError(res, 400, "Role user tidak valid.");
-      return;
-    }
-
-    if (!canAssignRole(req.auth.role, role)) {
-      sendError(res, 403, "Anda tidak memiliki izin untuk membuat role user tersebut.");
-      return;
-    }
-
-    if (password && password.length < 6) {
-      sendError(res, 400, "Kata sandi minimal 6 karakter.");
-      return;
-    }
-
-    const created = await withTransaction(async (client) => {
-      const businessResult = await client.query("select id from businesses where id = $1 limit 1", [targetBusinessId]);
-
-      if (businessResult.rowCount === 0) {
-        const error = new Error("Bisnis target tidak ditemukan.");
-        error.status = 404;
-        throw error;
-      }
-
-      const duplicate = await client.query(
-        `
-          select bm.id
-          from business_members bm
-          left join users u on u.id = bm.user_id
-          where bm.business_id = $1
-            and (u.email = $2 or bm.invitation_email = $2)
-          limit 1
-        `,
-        [targetBusinessId, email]
-      );
-
-      if (duplicate.rowCount > 0) {
-        const error = new Error("User dengan email ini sudah terdaftar di bisnis target.");
-        error.status = 409;
-        throw error;
-      }
-
-      const existingUser = await client.query("select id, email from users where email = $1 limit 1", [email]);
-      const memberId = randomId("mem_");
-
-      if (existingUser.rowCount > 0) {
-        const result = await client.query(
-          `
-            insert into business_members (id, business_id, user_id, role, status)
-            values ($1, $2, $3, $4, 'active')
-            returning
-              id,
-              $5::text as email,
-              role,
-              status,
-              created_at,
-              business_id,
-              (select name from businesses where id = business_members.business_id) as business_name
-          `,
-          [memberId, targetBusinessId, existingUser.rows[0].id, role, email]
-        );
-
-        return mapMember(result.rows[0]);
-      }
-
-      if (password) {
-        const userId = randomId("usr_");
-        const passwordHash = await hashPassword(password);
-
-        await client.query(
-          `
-            insert into users (id, email, password_hash, display_name)
-            values ($1, $2, $3, $4)
-          `,
-          [userId, email, passwordHash, buildDisplayNameFromEmail(email)]
-        );
-
-        const result = await client.query(
-          `
-            insert into business_members (id, business_id, user_id, role, status)
-            values ($1, $2, $3, $4, 'active')
-            returning
-              id,
-              $5::text as email,
-              role,
-              status,
-              created_at,
-              business_id,
-              (select name from businesses where id = business_members.business_id) as business_name
-          `,
-          [memberId, targetBusinessId, userId, role, email]
-        );
-
-        return mapMember(result.rows[0]);
-      }
-
-      const result = await client.query(
-        `
-          insert into business_members (id, business_id, invitation_email, role, status)
-          values ($1, $2, $3, $4, 'invited')
-          returning
-            id,
-            invitation_email as email,
-            role,
-            status,
-            created_at,
-            business_id,
-            (select name from businesses where id = business_members.business_id) as business_name
-        `,
-        [memberId, targetBusinessId, email, role]
-      );
-
-      return mapMember(result.rows[0]);
-    });
+    const created = await withTransaction(async (client) =>
+      createBusinessMemberRecord(client, {
+        actorRole: req.auth.role,
+        actorBusinessId: req.auth.businessId,
+        email: req.body.email,
+        role: req.body.role,
+        password: req.body.password,
+        requestedBusinessId: req.body.businessId,
+        fallbackBusinessId: req.auth.businessId,
+      })
+    );
 
     res.status(201).json(created);
+  })
+);
+
+app.post(
+  "/api/members/bulk",
+  requireAuth,
+  requireRole("super_admin"),
+  asyncHandler(async (req, res) => {
+    const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
+    const defaultBusinessId = typeof req.body.defaultBusinessId === "string" ? req.body.defaultBusinessId.trim() : "";
+
+    if (rows.length === 0) {
+      sendError(res, 400, "File upload tidak berisi data user.");
+      return;
+    }
+
+    if (rows.length > 250) {
+      sendError(res, 400, "Bulk upload maksimal 250 user per proses.");
+      return;
+    }
+
+    const created = [];
+    const errors = [];
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index] || {};
+      const rowNumber = Number.isFinite(Number(row.rowNumber)) ? Number(row.rowNumber) : index + 2;
+
+      try {
+        const member = await withTransaction(async (client) =>
+          createBusinessMemberRecord(client, {
+            actorRole: req.auth.role,
+            actorBusinessId: req.auth.businessId,
+            email: row.email,
+            role: row.role,
+            password: row.password,
+            requestedBusinessId: row.businessId,
+            requestedBusinessName: row.businessName,
+            fallbackBusinessId: defaultBusinessId || req.auth.businessId,
+          })
+        );
+
+        created.push(member);
+      } catch (error) {
+        errors.push({
+          rowNumber,
+          email: typeof row.email === "string" ? normalizeEmail(row.email) : "",
+          role: typeof row.role === "string" && row.role.trim() ? row.role.trim() : undefined,
+          businessId: typeof row.businessId === "string" && row.businessId.trim() ? row.businessId.trim() : undefined,
+          businessName: typeof row.businessName === "string" && row.businessName.trim() ? row.businessName.trim() : undefined,
+          message: error?.message || "Gagal memproses user.",
+        });
+      }
+    }
+
+    res.status(errors.length > 0 ? 200 : 201).json({
+      total: rows.length,
+      createdCount: created.length,
+      failedCount: errors.length,
+      created,
+      errors,
+    });
   })
 );
 

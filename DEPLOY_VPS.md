@@ -1,292 +1,187 @@
-# Deploy HPP Master di Balik Coolify
+# Deploy HPP Master via Coolify
 
-Dokumen ini menjelaskan deploy produksi aplikasi HPP Master ke VPS Sumopod Ubuntu dengan domain `hpp-master.profitebel.web.id`, menggunakan proxy Coolify yang sudah terpasang di server.
+Dokumen ini menjelaskan arsitektur dan prosedur deploy produksi aplikasi HPP Master di VPS Sumopod Ubuntu menggunakan Coolify sebagai source of truth deploy.
 
-## Ringkasan arsitektur deploy
+## Ringkasan
 
-- Aplikasi ini diperlakukan sebagai static Vite app.
-- Build produksi tetap dibuat dengan `npm ci` lalu `npm run build`.
-- Hasil build ada di folder `/var/www/hpp-master/dist`.
-- Aplikasi dilayani oleh container `nginx:alpine` sederhana.
-- Container frontend dihubungkan ke network Docker `coolify`.
-- Routing domain dan HTTPS ditangani oleh proxy Coolify, bukan Nginx host-level biasa.
-
-## Informasi server
-
-- Domain produksi: `hpp-master.profitebel.web.id`
-- Public IP VPS: `43.157.204.236`
+- Domain produksi: `https://hpp-master.profitebel.web.id`
+- VPS: `43.157.204.236`
 - SSH user: `ubuntu`
-- Lokasi source code: `/var/www/hpp-master`
-- Lokasi file deploy Coolify: `/opt/hpp-master`
-- Network Docker proxy: `coolify`
-- Nama container frontend: `hpp-master`
+- Coolify project: `HPP Master`
+- Coolify environment: `production`
+- Coolify application name: `hpp-master`
+- Repository: `RespatiBayu/Hpp-Master`
+- Branch produksi: `migrate-to-postgre`
+- Runtime: aplikasi Node/Express dari `Dockerfile`
+- Exposed port: `4000`
+- Healthcheck: `GET /api/health`
 
-## Kondisi yang wajib siap
+## Arsitektur deploy saat ini
 
-Selesaikan hal berikut sebelum akses publik dianggap final:
+- Deploy produksi dikelola penuh dari Coolify, bukan lagi dari `docker compose` manual.
+- Coolify menarik source code langsung dari GitHub branch `migrate-to-postgre`.
+- Image dibangun dari `Dockerfile` yang ada di repository.
+- Aplikasi berjalan sebagai service Node/Express tunggal dan melayani frontend + API dari container yang sama.
+- HTTPS, routing domain, dan proxy dikelola oleh Coolify/Traefik.
+- Database produksi tetap memakai database PostgreSQL yang sama seperti sebelum migrasi.
 
-1. Pastikan DNS `A record` `hpp-master.profitebel.web.id` mengarah ke `43.157.204.236`.
-2. Pastikan domain tersebut bisa di-resolve dari internet, bukan hanya dari panel DNS.
-3. Tambahkan `hpp-master.profitebel.web.id` ke Firebase Authentication Authorized Domains.
-4. Jika Google Sign-In masih mode testing, masukkan email user produksi ke daftar test users atau publikasikan konfigurasi OAuth/Firebase sesuai kebutuhan.
-5. Pastikan repository dapat diakses dari server lewat GitHub.
+## Informasi operasional penting
 
-## Persiapan server
+- URL aplikasi publik: `https://hpp-master.profitebel.web.id`
+- Endpoint health publik: `https://hpp-master.profitebel.web.id/api/health`
+- Endpoint health internal container: `http://localhost:4000/api/health`
+- Auto Deploy: `OFF`
+- Force HTTPS: `ON`
+- Gzip: `ON`
+- Persistent storage: tidak digunakan
 
-Masuk ke VPS:
+Rollback material deploy lama masih ada di VPS:
+
+- Source lama: `/var/www/hpp-master`
+- Compose lama: `/opt/hpp-master/docker-compose.yml`
+
+Catatan:
+
+- Deploy manual lama sekarang harus tetap `down` dan hanya dipakai jika perlu rollback darurat.
+- Source of truth operasional sekarang adalah konfigurasi resource di Coolify.
+
+## Environment variables produksi
+
+Set variabel berikut di Coolify pada resource `hpp-master`:
+
+- `NODE_ENV=production`
+- `PORT=4000`
+- `APP_URL=https://hpp-master.profitebel.web.id`
+- `AUTO_MIGRATE=true`
+- `SESSION_COOKIE_NAME=<nilai produksi aktif>`
+- `SESSION_TTL_DAYS=<nilai produksi aktif>`
+- `DATABASE_URL=<database produksi aktif>`
+
+Jangan commit secret ke repository. Semua secret harus dikelola di Coolify.
+
+## Checklist setup Coolify
+
+Konfigurasi yang harus aktif pada resource produksi:
+
+- Project baru `HPP Master`
+- Environment `production`
+- Source: `Public GitHub`
+- Repository: `RespatiBayu/Hpp-Master`
+- Branch: `migrate-to-postgre`
+- Build Pack: `Dockerfile`
+- Port exposed: `4000`
+- Domain: `https://hpp-master.profitebel.web.id`
+- Healthcheck:
+  - Type: `HTTP`
+  - Method: `GET`
+  - Host: `localhost`
+  - Port: `4000`
+  - Path: `/api/health`
+  - Expected status: `200`
+
+## Deploy rutin
+
+Alur deploy normal sekarang:
+
+1. Push perubahan ke branch `migrate-to-postgre`.
+2. Buka Coolify project `HPP Master`.
+3. Pilih application `hpp-master`.
+4. Masuk ke tab `Deployments`.
+5. Jalankan deploy manual.
+6. Tunggu status menjadi `Running (healthy)`.
+7. Verifikasi endpoint publik.
+
+## Verifikasi setelah deploy
+
+Lakukan verifikasi berikut setiap selesai deploy:
+
+```bash
+curl -I https://hpp-master.profitebel.web.id
+curl -s https://hpp-master.profitebel.web.id/api/health
+```
+
+Hasil yang diharapkan:
+
+- Root URL mengembalikan `200`
+- `/api/health` mengembalikan `{"ok":true}`
+- UI aplikasi bisa dibuka
+- Session login tetap bekerja
+
+Jika perlu verifikasi dari browser, buka:
+
+- `https://hpp-master.profitebel.web.id`
+- `https://hpp-master.profitebel.web.id/api/health`
+
+## Prosedur cutover yang sudah dipakai
+
+Migrasi dari deploy manual ke Coolify dilakukan dengan urutan berikut:
+
+1. Buat project Coolify baru `HPP Master`.
+2. Buat resource aplikasi `hpp-master`.
+3. Konfigurasi source GitHub, branch, Dockerfile, env vars, dan healthcheck.
+4. Deploy pertama di temporary domain Coolify.
+5. Verifikasi staging di temporary domain dan `/api/health`.
+6. Matikan deploy manual lama di VPS.
+7. Pasang domain produksi `hpp-master.profitebel.web.id` ke resource Coolify.
+8. Verifikasi domain publik dan endpoint health publik.
+
+## Rollback
+
+Jika deploy Coolify baru gagal dan perlu rollback cepat:
+
+1. Lepas domain produksi dari resource Coolify atau nonaktifkan routing domain pada resource tersebut.
+2. Masuk ke VPS.
+3. Naikkan kembali deploy manual lama:
 
 ```bash
 ssh ubuntu@43.157.204.236
-```
-
-Verifikasi dependency dasar:
-
-```bash
-node -v
-npm -v
-git --version
-sudo docker ps
-sudo docker network ls | grep coolify
-```
-
-## Deploy pertama
-
-Clone source code:
-
-```bash
-sudo mkdir -p /var/www/hpp-master
-sudo chown ubuntu:ubuntu /var/www/hpp-master
-git clone <repo-url> /var/www/hpp-master
-cd /var/www/hpp-master
-git checkout <branch>
-```
-
-Install dependency dan build:
-
-```bash
-cd /var/www/hpp-master
-npm ci
-npm run build
-```
-
-## File deploy untuk Coolify
-
-Buat folder deploy:
-
-```bash
-sudo mkdir -p /opt/hpp-master
-```
-
-Buat file Nginx di dalam container frontend:
-
-Path:
-
-```text
-/opt/hpp-master/default.conf
-```
-
-Isi:
-
-```nginx
-server {
-    listen 80;
-    server_name _;
-    root /usr/share/nginx/html;
-    index index.html;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-}
-```
-
-Buat file compose:
-
-Path:
-
-```text
-/opt/hpp-master/docker-compose.yml
-```
-
-Isi:
-
-```yaml
-services:
-  hpp-master:
-    image: nginx:1.27-alpine
-    container_name: hpp-master
-    restart: unless-stopped
-    volumes:
-      - /var/www/hpp-master/dist:/usr/share/nginx/html:ro
-      - /opt/hpp-master/default.conf:/etc/nginx/conf.d/default.conf:ro
-    networks:
-      - coolify
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=coolify
-      - traefik.http.middlewares.hpp-master-redirect.redirectscheme.scheme=https
-      - traefik.http.middlewares.hpp-master-gzip.compress=true
-      - traefik.http.routers.hpp-master-http.entrypoints=http
-      - traefik.http.routers.hpp-master-http.rule=Host(`hpp-master.profitebel.web.id`)
-      - traefik.http.routers.hpp-master-http.middlewares=hpp-master-redirect
-      - traefik.http.routers.hpp-master-http.service=hpp-master
-      - traefik.http.routers.hpp-master-https.entrypoints=https
-      - traefik.http.routers.hpp-master-https.rule=Host(`hpp-master.profitebel.web.id`)
-      - traefik.http.routers.hpp-master-https.middlewares=hpp-master-gzip
-      - traefik.http.routers.hpp-master-https.tls=true
-      - traefik.http.routers.hpp-master-https.tls.certresolver=letsencrypt
-      - traefik.http.routers.hpp-master-https.service=hpp-master
-      - traefik.http.services.hpp-master.loadbalancer.server.port=80
-
-networks:
-  coolify:
-    external: true
-```
-
-Naikkan servicenya:
-
-```bash
 cd /opt/hpp-master
 sudo docker compose up -d
 ```
 
-## Verifikasi deploy
+4. Verifikasi domain publik kembali merespons.
 
-Cek container:
-
-```bash
-sudo docker compose -f /opt/hpp-master/docker-compose.yml ps
-sudo docker ps --filter name=hpp-master
-```
-
-Verifikasi HTTP router dari sisi lokal VPS:
-
-```bash
-curl -I -H 'Host: hpp-master.profitebel.web.id' http://127.0.0.1
-```
-
-Respons yang benar biasanya redirect ke HTTPS.
-
-Verifikasi HTTPS dari sisi lokal VPS:
-
-```bash
-curl -k -I --resolve hpp-master.profitebel.web.id:443:127.0.0.1 https://hpp-master.profitebel.web.id
-```
-
-Jika DNS sudah benar dan sertifikat sudah terbit, tes tanpa `-k` juga harus berhasil:
-
-```bash
-curl -I --resolve hpp-master.profitebel.web.id:443:127.0.0.1 https://hpp-master.profitebel.web.id
-```
-
-## Update rutin
-
-Saat ada perubahan baru di repo:
-
-```bash
-ssh ubuntu@43.157.204.236
-cd /var/www/hpp-master
-git pull origin <branch>
-npm ci
-npm run build
-cd /opt/hpp-master
-sudo docker compose up -d
-```
-
-Karena container membaca folder `dist` dari host, update frontend biasanya cukup dengan rebuild lalu `docker compose up -d`.
-
-## Status deploy saat ini
-
-Langkah berikut sudah berhasil dijalankan di server:
-
-1. Repo di-clone ke `/var/www/hpp-master`.
-2. Build produksi berhasil dibuat dengan `npm ci` dan `npm run build`.
-3. Container `hpp-master` berhasil dijalankan.
-4. Container sudah terhubung ke network `coolify`.
-5. Proxy merespons `307 Temporary Redirect` dari HTTP ke HTTPS untuk host `hpp-master.profitebel.web.id`.
-6. Proxy merespons `200` di HTTPS saat diuji lokal dengan `--resolve`.
-
-Catatan penting:
-
-- Saat pengecekan terakhir, `hpp-master.profitebel.web.id` belum bisa di-resolve dari server dengan `getent hosts`.
-- Karena itu, sertifikat valid Let’s Encrypt belum siap, dan pengecekan HTTPS tanpa `-k` masih menghasilkan self-signed certificate fallback.
+Setelah insiden selesai, evaluasi apakah rollback material lama masih perlu dipertahankan.
 
 ## Troubleshooting
 
-### 1. Domain belum resolve
+### 1. Deploy selesai tetapi status tidak healthy
 
-Gejala:
+Periksa:
 
-- `getent hosts hpp-master.profitebel.web.id` tidak mengembalikan IP
-- browser publik belum bisa membuka domain
-- sertifikat valid belum keluar
+- tab `Deployments` di Coolify
+- tab `Logs` di Coolify
+- nilai `PORT`
+- healthcheck path `/api/health`
+- koneksi `DATABASE_URL`
 
-Solusi:
+### 2. Domain publik tidak membuka aplikasi
 
-1. Pastikan `A record` domain mengarah ke `43.157.204.236`.
-2. Tunggu propagasi DNS.
-3. Ulangi tes:
+Periksa:
 
-```bash
-getent hosts hpp-master.profitebel.web.id
-curl -I http://hpp-master.profitebel.web.id
-```
+- domain pada field `Domains` di Coolify
+- status deploy `Running`
+- DNS `A record` ke `43.157.204.236`
+- apakah deploy manual lama masih aktif dan bentrok
 
-### 2. HTTPS masih self-signed
+### 3. Session/login bermasalah
 
-Gejala:
+Periksa:
 
-- `curl -I --resolve ... https://hpp-master.profitebel.web.id` gagal verifikasi SSL
+- `APP_URL`
+- `NODE_ENV=production`
+- `SESSION_COOKIE_NAME`
+- `SESSION_TTL_DAYS`
+- akses HTTPS publik
 
-Solusi:
+### 4. Perlu cek deploy manual lama
 
-1. Pastikan DNS domain sudah publik dan mengarah benar.
-2. Tunggu Coolify atau Traefik mengambil sertifikat Let’s Encrypt.
-3. Cek ulang beberapa menit setelah DNS valid.
-
-### 3. Firebase login gagal
-
-Gejala:
-
-- popup Google login ditolak
-- Firebase menganggap domain tidak valid
-
-Solusi:
-
-1. Tambahkan `hpp-master.profitebel.web.id` ke Firebase Authorized Domains.
-2. Pastikan konfigurasi OAuth/Firebase Auth aktif.
-3. Jika masih testing mode, tambahkan email user yang akan dipakai.
-
-### 4. Halaman `404` saat refresh route
-
-Gejala:
-
-- halaman awal terbuka
-- refresh di route tertentu gagal
-
-Solusi:
-
-Pastikan file `/opt/hpp-master/default.conf` tetap memakai:
-
-```nginx
-location / {
-    try_files $uri $uri/ /index.html;
-}
-```
-
-Lalu restart service:
+Gunakan hanya untuk rollback atau audit:
 
 ```bash
+ssh ubuntu@43.157.204.236
 cd /opt/hpp-master
-sudo docker compose up -d
+sudo docker compose ps
 ```
 
-## Placeholder yang harus diganti
-
-- `<repo-url>`
-- `<branch>`
-
-## Catatan keamanan
-
-- Dokumen ini tidak menyertakan password VPS asli.
-- Jika domain berubah, update label host Traefik, DNS, dan Firebase Authorized Domains.
+Jika migrasi Coolify sudah stabil, deploy manual lama sebaiknya tetap dalam keadaan nonaktif.

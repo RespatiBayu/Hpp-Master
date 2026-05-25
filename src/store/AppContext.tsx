@@ -3,7 +3,22 @@ import React, { createContext, useContext, useEffect, useState, type ReactNode }
 import { appApi, type BootstrapPayload } from "../lib/api";
 import { type AuthUser, emailPasswordSignIn, initAuth, logout as logoutAuth } from "../lib/auth";
 import { getBusinessMenuLabel, createDefaultMenuVisibility } from "../lib/menu-config";
-import type { AppMenuKey, AppUser, BusinessMenuPackage, BusinessRole, BusinessSummary, Expense, Item, MenuVisibility, Production, Purchase, Sale, UserActivity } from "../lib/types";
+import type {
+  AppMenuKey,
+  AppUser,
+  BulkUserUploadResult,
+  BulkUserUploadRow,
+  BusinessMenuPackage,
+  BusinessRole,
+  BusinessSummary,
+  Expense,
+  Item,
+  MenuVisibility,
+  Production,
+  Purchase,
+  Sale,
+  UserActivity,
+} from "../lib/types";
 
 interface AppState {
   items: Item[];
@@ -41,6 +56,7 @@ interface AppState {
   deleteExpense: (id: string) => Promise<void>;
   refreshData: () => Promise<void>;
   addAppUser: (email: string, role: BusinessRole, password?: string, targetBusinessId?: string) => Promise<void>;
+  bulkAddAppUsers: (rows: BulkUserUploadRow[], defaultBusinessId?: string) => Promise<BulkUserUploadResult>;
   updateAppUser: (id: string, role: BusinessRole, password?: string) => Promise<void>;
   deleteAppUser: (id: string) => Promise<void>;
   updateMenuVisibility: (menuKey: AppMenuKey, isEnabled: boolean) => Promise<void>;
@@ -332,6 +348,24 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     );
   };
 
+  const bulkAddAppUsers = async (rows: BulkUserUploadRow[], defaultBusinessId?: string) => {
+    const result = await appApi.members.bulkCreate(rows, defaultBusinessId);
+    const defaultBusinessName = defaultBusinessId
+      ? businesses.find((business) => business.id === defaultBusinessId)?.name || defaultBusinessId
+      : businessName || undefined;
+
+    if (result.created.length > 0) {
+      setAppUsers((prev) => [...prev, ...result.created]);
+    }
+
+    await logActivity(
+      "BULK_ADD_USERS",
+      `Bulk upload user: ${result.createdCount} berhasil, ${result.failedCount} gagal${defaultBusinessName ? ` (default bisnis ${defaultBusinessName})` : ""}`
+    );
+
+    return result;
+  };
+
   const updateAppUser = async (id: string, role: BusinessRole, password?: string) => {
     const current = appUsers.find((member) => member.id === id);
     if (!current) return;
@@ -437,6 +471,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         deleteExpense,
         refreshData,
         addAppUser,
+        bulkAddAppUsers,
         updateAppUser,
         deleteAppUser,
         updateMenuVisibility,

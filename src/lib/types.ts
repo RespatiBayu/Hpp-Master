@@ -71,6 +71,32 @@ export interface AppUser {
   businessName?: string;
 }
 
+export interface BulkUserUploadRow {
+  rowNumber: number;
+  email: string;
+  role?: string;
+  password?: string;
+  businessId?: string;
+  businessName?: string;
+}
+
+export interface BulkUserUploadError {
+  rowNumber: number;
+  email: string;
+  role?: string;
+  businessId?: string;
+  businessName?: string;
+  message: string;
+}
+
+export interface BulkUserUploadResult {
+  total: number;
+  createdCount: number;
+  failedCount: number;
+  created: AppUser[];
+  errors: BulkUserUploadError[];
+}
+
 export interface BusinessSummary {
   id: string;
   name: string;
