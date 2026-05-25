@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { appApi, type BootstrapPayload } from "../lib/api";
-import { type AuthUser, emailPasswordSignIn, emailPasswordSignUp, initAuth, logout as logoutAuth } from "../lib/auth";
-import type { AppUser, Expense, Item, Production, Purchase, Sale, UserActivity } from "../lib/types";
+import { type AuthUser, emailPasswordSignIn, initAuth, logout as logoutAuth } from "../lib/auth";
+import { getBusinessMenuLabel, createDefaultMenuVisibility } from "../lib/menu-config";
+import type { AppMenuKey, AppUser, BusinessMenuPackage, BusinessRole, Expense, Item, MenuVisibility, Production, Purchase, Sale, UserActivity } from "../lib/types";
 
 interface AppState {
   items: Item[];
@@ -14,13 +15,14 @@ interface AppState {
   activities: UserActivity[];
   user: AuthUser | null;
   businessName: string | null;
-  businessRole: "owner" | "admin" | "staff" | null;
+  businessRole: BusinessRole | null;
+  menuVisibility: MenuVisibility;
+  menuPackages: BusinessMenuPackage[];
   needsAuth: boolean;
   isLoading: boolean;
   error: string | null;
   loginError: string | null;
   loginWithEmail: (email: string, password: string) => Promise<void>;
-  signUpWithEmail: (email: string, password: string, businessName?: string) => Promise<void>;
   logout: () => Promise<void>;
   addItem: (item: Omit<Item, "id">) => Promise<void>;
   editItem: (id: string, updatedItem: Partial<Item>) => Promise<void>;
@@ -36,8 +38,14 @@ interface AppState {
   editExpense: (id: string, updatedExpense: Partial<Expense>) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
   refreshData: () => Promise<void>;
-  addAppUser: (email: string, role: string) => Promise<void>;
+  addAppUser: (email: string, role: BusinessRole, password?: string) => Promise<void>;
+  updateAppUser: (id: string, role: BusinessRole, password?: string) => Promise<void>;
   deleteAppUser: (id: string) => Promise<void>;
+  updateMenuVisibility: (menuKey: AppMenuKey, isEnabled: boolean) => Promise<void>;
+  createMenuPackage: (payload: { name: string; description?: string; menuVisibility: MenuVisibility }) => Promise<void>;
+  updateMenuPackage: (id: string, payload: { name: string; description?: string; menuVisibility: MenuVisibility }) => Promise<void>;
+  deleteMenuPackage: (id: string) => Promise<void>;
+  applyMenuPackage: (id: string) => Promise<void>;
   logActivity: (action: string, details: string) => Promise<void>;
 }
 
@@ -51,12 +59,16 @@ const emptyCollections = {
   expenses: [] as Expense[],
   appUsers: [] as AppUser[],
   activities: [] as UserActivity[],
+  menuPackages: [] as BusinessMenuPackage[],
 };
+
+const emptyMenuVisibility = createDefaultMenuVisibility();
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [businessName, setBusinessName] = useState<string | null>(null);
-  const [businessRole, setBusinessRole] = useState<"owner" | "admin" | "staff" | null>(null);
+  const [businessRole, setBusinessRole] = useState<BusinessRole | null>(null);
+  const [menuVisibility, setMenuVisibility] = useState<MenuVisibility>(emptyMenuVisibility);
   const [needsAuth, setNeedsAuth] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +81,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [activities, setActivities] = useState<UserActivity[]>([]);
+  const [menuPackages, setMenuPackages] = useState<BusinessMenuPackage[]>([]);
 
   const resetState = () => {
     setUser(null);
@@ -81,6 +94,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setExpenses(emptyCollections.expenses);
     setAppUsers(emptyCollections.appUsers);
     setActivities(emptyCollections.activities);
+    setMenuPackages(emptyCollections.menuPackages);
+    setMenuVisibility(emptyMenuVisibility);
   };
 
   const applyBootstrap = (payload: BootstrapPayload) => {
@@ -94,6 +109,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setExpenses(payload.expenses);
     setAppUsers(payload.appUsers);
     setActivities(payload.activities);
+    setMenuPackages(payload.menuPackages || emptyCollections.menuPackages);
+    setMenuVisibility(payload.menuVisibility || emptyMenuVisibility);
   };
 
   const initializeData = async () => {
@@ -157,21 +174,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     } catch (err: any) {
       console.error("Email login failed:", err);
       setLoginError(err.message || "Gagal masuk ke sistem.");
-    }
-  };
-
-  const signUpWithEmail = async (email: string, password: string, newBusinessName?: string) => {
-    try {
-      setLoginError(null);
-      const result = await emailPasswordSignUp(email, password, newBusinessName);
-      if (!result) return;
-
-      setUser(result.user);
-      setNeedsAuth(false);
-      await initializeData();
-    } catch (err: any) {
-      console.error("Email signup failed:", err);
-      setLoginError(err.message || "Gagal membuat akun bisnis.");
     }
   };
 
@@ -309,15 +311,32 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     await logActivity("DELETE_EXPENSE", `Menghapus beban: ${current?.description || id}`);
   };
 
-  const addAppUser = async (email: string, role: string) => {
-    const created = await appApi.members.create(email, role);
+  const addAppUser = async (email: string, role: BusinessRole, password?: string) => {
+    const created = await appApi.members.create(email, role, password);
     setAppUsers((prev) => [...prev, created]);
     await logActivity(
       "ADD_USER",
       created.status === "invited"
-        ? `Mengundang user baru: ${created.email} (${created.role})`
+        ? `Membuat undangan user: ${created.email} (${created.role})`
         : `Menambahkan user baru: ${created.email} (${created.role})`
     );
+  };
+
+  const updateAppUser = async (id: string, role: BusinessRole, password?: string) => {
+    const current = appUsers.find((member) => member.id === id);
+    if (!current) return;
+
+    const updated = await appApi.members.update(id, role, password);
+    setAppUsers((prev) => prev.map((member) => (member.id === id ? updated : member)));
+
+    const details =
+      current.role !== updated.role
+        ? `Mengubah role user ${updated.email} dari ${current.role} menjadi ${updated.role}`
+        : password
+          ? `Memperbarui data akun user: ${updated.email}`
+          : `Memperbarui data user: ${updated.email}`;
+
+    await logActivity("UPDATE_USER", details);
   };
 
   const deleteAppUser = async (id: string) => {
@@ -327,6 +346,47 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     await appApi.members.remove(id);
     setAppUsers((prev) => prev.filter((member) => member.id !== id));
     await logActivity("DELETE_USER", `Mencabut akses user: ${current.email}`);
+  };
+
+  const updateMenuVisibility = async (menuKey: AppMenuKey, isEnabled: boolean) => {
+    const response = await appApi.business.updateMenuVisibility(menuKey, isEnabled);
+    setMenuVisibility(response.menuVisibility);
+    setMenuPackages(response.menuPackages);
+    await logActivity("UPDATE_MENU_VISIBILITY", `${isEnabled ? "Menampilkan" : "Menyembunyikan"} menu ${getBusinessMenuLabel(menuKey)}`);
+  };
+
+  const createMenuPackage = async (payload: { name: string; description?: string; menuVisibility: MenuVisibility }) => {
+    const response = await appApi.business.createMenuPackage(payload);
+    setMenuVisibility(response.menuVisibility);
+    setMenuPackages(response.menuPackages);
+    await logActivity("CREATE_MENU_PACKAGE", `Membuat paket menu: ${payload.name}`);
+  };
+
+  const updateMenuPackage = async (id: string, payload: { name: string; description?: string; menuVisibility: MenuVisibility }) => {
+    const previousPackage = menuPackages.find((menuPackage) => menuPackage.id === id);
+    const response = await appApi.business.updateMenuPackage(id, payload);
+    setMenuVisibility(response.menuVisibility);
+    setMenuPackages(response.menuPackages);
+    await logActivity(
+      "UPDATE_MENU_PACKAGE",
+      `Memperbarui paket menu: ${previousPackage?.name || payload.name} menjadi ${payload.name}`
+    );
+  };
+
+  const deleteMenuPackage = async (id: string) => {
+    const currentPackage = menuPackages.find((menuPackage) => menuPackage.id === id);
+    const response = await appApi.business.deleteMenuPackage(id);
+    setMenuVisibility(response.menuVisibility);
+    setMenuPackages(response.menuPackages);
+    await logActivity("DELETE_MENU_PACKAGE", `Menghapus paket menu: ${currentPackage?.name || id}`);
+  };
+
+  const applyMenuPackage = async (id: string) => {
+    const currentPackage = menuPackages.find((menuPackage) => menuPackage.id === id);
+    const response = await appApi.business.applyMenuPackage(id);
+    setMenuVisibility(response.menuVisibility);
+    setMenuPackages(response.menuPackages);
+    await logActivity("APPLY_MENU_PACKAGE", `Menerapkan paket menu: ${currentPackage?.name || id}`);
   };
 
   return (
@@ -342,12 +402,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         user,
         businessName,
         businessRole,
+        menuVisibility,
+        menuPackages,
         needsAuth,
         isLoading,
         error,
         loginError,
         loginWithEmail,
-        signUpWithEmail,
         logout,
         addItem,
         editItem,
@@ -364,7 +425,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         deleteExpense,
         refreshData,
         addAppUser,
+        updateAppUser,
         deleteAppUser,
+        updateMenuVisibility,
+        createMenuPackage,
+        updateMenuPackage,
+        deleteMenuPackage,
+        applyMenuPackage,
         logActivity,
       }}
     >

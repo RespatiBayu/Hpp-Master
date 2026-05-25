@@ -1,5 +1,7 @@
-import React, { useState } from "react";
-import { LayoutDashboard, Users, UserCircle, Settings, LogOut, Loader2, Package, ShoppingCart, Activity, FilePlus, Receipt } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { LayoutDashboard, Users, UserCircle, Settings, LogOut, Loader2, Package, ShoppingCart, Activity, FilePlus, Receipt, Calculator } from "lucide-react";
+
+import { businessMenuDefinitions } from "./lib/menu-config";
 import { useAppContext } from "./store/AppContext";
 import Dashboard from "./views/Dashboard";
 import InventoryView from "./views/InventoryView";
@@ -10,10 +12,44 @@ import ExpensesView from "./views/ExpensesView";
 import AdminPanel from "./views/AdminPanel";
 import UserView from "./views/UserView";
 import LoginView from "./views/LoginView";
+import BusinessCalculatorView from "./views/BusinessCalculatorView";
 
 export default function MainApp() {
-  const { user, businessName, businessRole, needsAuth, isLoading, logout } = useAppContext();
+  const { user, businessName, businessRole, menuVisibility, needsAuth, isLoading, logout } = useAppContext();
   const [activeTab, setActiveTab] = useState("dashboard");
+
+  const menuIcons = {
+    dashboard: LayoutDashboard,
+    inventory: Package,
+    purchases: ShoppingCart,
+    productions: Activity,
+    sales: FilePlus,
+    expenses: Receipt,
+    calculator: Calculator,
+  } as const;
+
+  const tabs = useMemo(() => {
+    const businessTabs = businessMenuDefinitions
+      .filter((menu) => menuVisibility[menu.id])
+      .map((menu) => ({
+        id: menu.id,
+        label: menu.label,
+        icon: menuIcons[menu.id],
+      }));
+
+    const nextTabs = [...businessTabs, { id: "user", label: "User", icon: Users }];
+
+    if (businessRole === "super_admin" || businessRole === "admin") {
+      nextTabs.push({ id: "admin", label: "Admin Panel", icon: Settings });
+    }
+
+    return nextTabs;
+  }, [businessRole, menuVisibility]);
+
+  useEffect(() => {
+    if (tabs.some((tab) => tab.id === activeTab)) return;
+    setActiveTab(tabs[0]?.id || "user");
+  }, [activeTab, tabs]);
 
   if (needsAuth) {
     return <LoginView />
@@ -28,21 +64,6 @@ export default function MainApp() {
         </div>
       </div>
     );
-  }
-
-  let tabs = [
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { id: "inventory", label: "Inventori", icon: Package },
-    { id: "purchases", label: "Pembelian Bahan", icon: ShoppingCart },
-    { id: "productions", label: "Produksi (HPP)", icon: Activity },
-    { id: "sales", label: "Penjualan", icon: FilePlus },
-    { id: "expenses", label: "Beban Operasional", icon: Receipt },
-  ];
-
-  tabs.push({ id: "user", label: "User", icon: Users });
-
-  if (businessRole === "owner" || businessRole === "admin") {
-    tabs.push({ id: "admin", label: "Admin Panel", icon: Settings });
   }
 
   return (
@@ -100,6 +121,7 @@ export default function MainApp() {
             {activeTab === "productions" && <ProductionsView />}
             {activeTab === "sales" && <SalesView />}
             {activeTab === "expenses" && <ExpensesView />}
+            {activeTab === "calculator" && <BusinessCalculatorView />}
             {activeTab === "admin" && <AdminPanel />}
             {activeTab === "user" && <UserView />}
         </div>

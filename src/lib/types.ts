@@ -1,4 +1,18 @@
 export type ItemType = "RAW" | "HALF_FINISHED" | "FINISHED";
+export type BusinessRole = "super_admin" | "admin" | "staff";
+export type AppMenuKey = "dashboard" | "inventory" | "purchases" | "productions" | "sales" | "expenses" | "calculator";
+export type MemberStatus = "active" | "invited";
+export type MenuVisibility = Record<AppMenuKey, boolean>;
+
+export interface BusinessMenuPackage {
+  id: string;
+  name: string;
+  description: string | null;
+  menuVisibility: MenuVisibility;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface Item {
   id: string;
@@ -50,9 +64,9 @@ export interface Expense {
 export interface AppUser {
   id: string;
   email: string;
-  role: string;
+  role: BusinessRole;
   createdAt: string;
-  status?: "active" | "invited";
+  status?: MemberStatus;
 }
 
 export interface UserActivity {

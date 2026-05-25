@@ -19,7 +19,7 @@ create table if not exists business_members (
   business_id text not null references businesses(id) on delete cascade,
   user_id text references users(id) on delete cascade,
   invitation_email text,
-  role text not null check (role in ('owner', 'admin', 'staff')),
+  role text not null check (role in ('super_admin', 'admin', 'staff')),
   status text not null check (status in ('active', 'invited')) default 'invited',
   created_at timestamptz not null default now(),
   unique (business_id, user_id)
@@ -133,3 +133,42 @@ create table if not exists activity_logs (
 
 create index if not exists idx_activity_logs_business_id on activity_logs(business_id);
 create index if not exists idx_activity_logs_created_at on activity_logs(created_at desc);
+
+create table if not exists business_menu_settings (
+  id text primary key,
+  business_id text not null references businesses(id) on delete cascade,
+  menu_key text not null,
+  is_enabled boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (business_id, menu_key)
+);
+
+create index if not exists idx_business_menu_settings_business_id on business_menu_settings(business_id);
+
+create table if not exists business_menu_packages (
+  id text primary key,
+  business_id text not null references businesses(id) on delete cascade,
+  name text not null,
+  description text,
+  menu_visibility_json jsonb not null default '{}'::jsonb,
+  is_active boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_business_menu_packages_business_id on business_menu_packages(business_id);
+create unique index if not exists idx_business_menu_packages_single_active
+  on business_menu_packages(business_id)
+  where is_active = true;
+
+update business_members
+set role = 'super_admin'
+where role = 'owner';
+
+alter table business_members
+drop constraint if exists business_members_role_check;
+
+alter table business_members
+add constraint business_members_role_check
+check (role in ('super_admin', 'admin', 'staff'));

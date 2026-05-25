@@ -1,25 +1,60 @@
-import React, { useState } from "react";
-import { LogOut, Plus, Settings, Trash2, Users } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { KeyRound, LogOut, Pencil, Plus, Settings, Trash2, Users } from "lucide-react";
 
+import { canManageMember, canManageUsers, getAssignableRoles, getRoleLabel } from "../lib/access";
+import type { AppUser, BusinessRole } from "../lib/types";
 import { useAppContext } from "../store/AppContext";
 
-export default function UserView() {
-  const { user, businessName, businessRole, logout, appUsers, addAppUser, deleteAppUser } = useAppContext();
+const roleBadgeClass: Record<BusinessRole, string> = {
+  super_admin: "bg-indigo-100 text-indigo-700",
+  admin: "bg-blue-100 text-blue-700",
+  staff: "bg-slate-100 text-slate-700",
+};
 
-  const canManageUsers = businessRole === "owner" || businessRole === "admin";
+export default function UserView() {
+  const { user, businessName, businessRole, logout, appUsers, addAppUser, updateAppUser, deleteAppUser } = useAppContext();
+
+  const canManageBusinessUsers = canManageUsers(businessRole);
+  const assignableRoles = useMemo(() => getAssignableRoles(businessRole), [businessRole]);
+  const defaultRole = assignableRoles[0] || "staff";
+
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [newEmail, setNewEmail] = useState("");
-  const [newRole, setNewRole] = useState<"admin" | "staff">(businessRole === "owner" ? "admin" : "staff");
+  const [newRole, setNewRole] = useState<BusinessRole>(defaultRole);
+  const [newPassword, setNewPassword] = useState("");
+  const [editingUser, setEditingUser] = useState<AppUser | null>(null);
+  const [editRole, setEditRole] = useState<BusinessRole>(defaultRole);
+  const [editPassword, setEditPassword] = useState("");
   const [userToDelete, setUserToDelete] = useState<{ id: string; email: string } | null>(null);
+
+  useEffect(() => {
+    setNewRole(defaultRole);
+  }, [defaultRole]);
 
   const handleAddUser = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!newEmail) return;
 
-    await addAppUser(newEmail, newRole);
+    await addAppUser(newEmail, newRole, newPassword || undefined);
     setNewEmail("");
-    setNewRole(businessRole === "owner" ? "admin" : "staff");
+    setNewRole(defaultRole);
+    setNewPassword("");
     setIsAddingUser(false);
+  };
+
+  const startEditUser = (member: AppUser) => {
+    setEditingUser(member);
+    setEditRole(member.role);
+    setEditPassword("");
+  };
+
+  const handleUpdateUser = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editingUser) return;
+
+    await updateAppUser(editingUser.id, editRole, editPassword || undefined);
+    setEditingUser(null);
+    setEditPassword("");
   };
 
   const confirmDelete = async () => {
@@ -55,7 +90,7 @@ export default function UserView() {
               </div>
               <div>
                 <label className="mb-1 block text-[10px] font-bold uppercase text-slate-400">Peran</label>
-                <p className="font-medium capitalize text-slate-900">{businessRole || "-"}</p>
+                <p className="font-medium text-slate-900">{getRoleLabel(businessRole)}</p>
               </div>
             </div>
           </div>
@@ -73,15 +108,18 @@ export default function UserView() {
 
         <div className="lg:col-span-2">
           <div className="flex h-full flex-col rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
-            <div className="mb-6 flex items-center justify-between">
+            <div className="mb-6 flex items-center justify-between gap-4">
               <div className="flex items-center">
                 <div className="mr-3 rounded-lg bg-purple-50 p-2 text-purple-600">
                   <Users className="h-5 w-5" />
                 </div>
-                <h2 className="text-lg font-bold text-slate-900">Pengguna Bisnis</h2>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Pengguna Bisnis</h2>
+                  <p className="mt-1 text-sm text-slate-500">Super admin bisa mengelola admin dan staff. Admin hanya bisa mengelola staff.</p>
+                </div>
               </div>
 
-              {canManageUsers && (
+              {canManageBusinessUsers && (
                 <button
                   onClick={() => setIsAddingUser((current) => !current)}
                   className="inline-flex items-center justify-center rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-600 transition-colors hover:bg-blue-100"
@@ -91,42 +129,49 @@ export default function UserView() {
               )}
             </div>
 
-            {!canManageUsers && (
+            {!canManageBusinessUsers && (
               <div className="mb-6 rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs font-semibold text-slate-500">
-                Hanya owner atau admin yang bisa menambah dan mencabut akses user.
+                Hanya super admin atau admin yang bisa mengelola akses user bisnis.
               </div>
             )}
 
-            {isAddingUser && canManageUsers && (
+            {isAddingUser && canManageBusinessUsers && (
               <form onSubmit={handleAddUser} className="mb-6 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
                 <h3 className="mb-3 text-sm font-bold text-slate-900">Tambah User Baru</h3>
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <div className="flex-1">
-                    <input
-                      type="email"
-                      required
-                      value={newEmail}
-                      onChange={(event) => setNewEmail(event.target.value)}
-                      placeholder="Alamat Email User"
-                      className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
-                  <div className="w-full sm:w-32">
-                    <select
-                      value={newRole}
-                      onChange={(event) => setNewRole(event.target.value as "admin" | "staff")}
-                      className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                    >
-                      {businessRole === "owner" && <option value="admin">Admin</option>}
-                      <option value="staff">Staff</option>
-                    </select>
-                  </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1.7fr)_minmax(0,0.8fr)_minmax(0,1fr)_auto]">
+                  <input
+                    type="email"
+                    required
+                    value={newEmail}
+                    onChange={(event) => setNewEmail(event.target.value)}
+                    placeholder="Alamat Email User"
+                    className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                  <select
+                    value={newRole}
+                    onChange={(event) => setNewRole(event.target.value as BusinessRole)}
+                    className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    {assignableRoles.map((role) => (
+                      <option key={role} value={role}>
+                        {getRoleLabel(role)}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="password"
+                    minLength={6}
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    placeholder="Password opsional"
+                    className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
                   <button type="submit" className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-blue-500">
                     Simpan
                   </button>
                 </div>
-                <p className="mt-2 text-xs text-slate-500">
-                  Jika email belum punya akun, sistem akan menyimpan undangan. User bisa mendaftar sendiri memakai email yang sama.
+                <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                  Isi password jika akun ingin langsung aktif. Jika dikosongkan, user akan tersimpan sebagai undangan dan bisa diaktifkan nanti dari panel ini.
                 </p>
               </form>
             )}
@@ -150,47 +195,52 @@ export default function UserView() {
                       </td>
                     </tr>
                   ) : (
-                    appUsers.map((member) => (
-                      <tr key={member.id}>
-                        <td className="px-4 py-3 text-sm font-medium text-slate-900">{member.email}</td>
-                        <td className="px-4 py-3 text-sm text-slate-500">
-                          <span
-                            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
-                              member.role === "owner"
-                                ? "bg-purple-100 text-purple-700"
-                                : member.role === "admin"
-                                  ? "bg-blue-100 text-blue-700"
-                                  : "bg-slate-100 text-slate-700"
-                            }`}
-                          >
-                            {member.role}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-500">
-                          <span
-                            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
-                              member.status === "invited" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
-                            }`}
-                          >
-                            {member.status === "invited" ? "Menunggu Daftar" : "Aktif"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-500">{new Date(member.createdAt).toLocaleDateString("id-ID")}</td>
-                        <td className="px-4 py-3 text-right text-sm">
-                          {canManageUsers && member.role !== "owner" ? (
-                            <button
-                              onClick={() => setUserToDelete({ id: member.id, email: member.email })}
-                              className="inline-flex items-center justify-center rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
-                              title="Cabut Hak Akses"
+                    appUsers.map((member) => {
+                      const canManageThisMember = canManageMember(businessRole, member.role);
+
+                      return (
+                        <tr key={member.id}>
+                          <td className="px-4 py-3 text-sm font-medium text-slate-900">{member.email}</td>
+                          <td className="px-4 py-3 text-sm text-slate-500">
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${roleBadgeClass[member.role]}`}>
+                              {getRoleLabel(member.role)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-500">
+                            <span
+                              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
+                                member.status === "invited" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
+                              }`}
                             >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          ) : (
-                            <span className="text-slate-300">-</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))
+                              {member.status === "invited" ? "Menunggu Aktivasi" : "Aktif"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-500">{new Date(member.createdAt).toLocaleDateString("id-ID")}</td>
+                          <td className="px-4 py-3 text-right text-sm">
+                            {canManageThisMember ? (
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  onClick={() => startEditUser(member)}
+                                  className="inline-flex items-center justify-center rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-blue-50 hover:text-blue-600"
+                                  title="Ubah user"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={() => setUserToDelete({ id: member.id, email: member.email })}
+                                  className="inline-flex items-center justify-center rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                                  title="Cabut hak akses"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-slate-300">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -198,6 +248,70 @@ export default function UserView() {
           </div>
         </div>
       </div>
+
+      {editingUser && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="mb-2 text-lg font-bold text-slate-900">Ubah User</h3>
+            <p className="mb-6 text-sm text-slate-600">
+              Perbarui role atau password untuk <strong>{editingUser.email}</strong>.
+            </p>
+
+            <form onSubmit={handleUpdateUser} className="space-y-4">
+              <div>
+                <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Role</label>
+                <select
+                  value={editRole}
+                  onChange={(event) => setEditRole(event.target.value as BusinessRole)}
+                  className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  {assignableRoles.map((role) => (
+                    <option key={role} value={role}>
+                      {getRoleLabel(role)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-400">
+                  <KeyRound className="h-3.5 w-3.5" />
+                  Password Baru
+                </label>
+                <input
+                  type="password"
+                  minLength={6}
+                  value={editPassword}
+                  onChange={(event) => setEditPassword(event.target.value)}
+                  placeholder={editingUser.status === "invited" ? "Isi untuk aktivasi akun" : "Kosongkan jika tidak diubah"}
+                  className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+                <p className="mt-2 text-xs text-slate-500">
+                  {editingUser.status === "invited"
+                    ? "Mengisi password akan langsung mengaktifkan akun undangan ini."
+                    : "Kosongkan bila Anda hanya ingin mengganti role tanpa reset password."}
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingUser(null)}
+                  className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500 transition-colors hover:bg-slate-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-500"
+                >
+                  Simpan Perubahan
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {userToDelete && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">

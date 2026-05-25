@@ -1,4 +1,4 @@
-import type { AppUser, Expense, Item, Production, Purchase, Sale, UserActivity } from "./types";
+import type { AppMenuKey, AppUser, BusinessMenuPackage, BusinessRole, Expense, Item, MenuVisibility, Production, Purchase, Sale, UserActivity } from "./types";
 
 export interface ApiAuthUser {
   id: string;
@@ -10,7 +10,7 @@ export interface ApiAuthUser {
 export interface BusinessContext {
   id: string;
   name: string;
-  role: "owner" | "admin" | "staff";
+  role: BusinessRole;
 }
 
 export interface BootstrapPayload {
@@ -23,6 +23,8 @@ export interface BootstrapPayload {
   expenses: Expense[];
   appUsers: AppUser[];
   activities: UserActivity[];
+  menuVisibility: MenuVisibility;
+  menuPackages: BusinessMenuPackage[];
 }
 
 const apiFetch = async <T>(path: string, init?: RequestInit): Promise<T> => {
@@ -141,14 +143,44 @@ export const appApi = {
       }),
   },
   members: {
-    create: (email: string, role: string) =>
+    create: (email: string, role: BusinessRole, password?: string) =>
       apiFetch<AppUser>("/api/members", {
         method: "POST",
-        body: JSON.stringify({ email, role }),
+        body: JSON.stringify({ email, role, password }),
+      }),
+    update: (id: string, role: BusinessRole, password?: string) =>
+      apiFetch<AppUser>(`/api/members/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ role, password }),
       }),
     remove: (id: string) =>
       apiFetch<{ ok: boolean }>(`/api/members/${id}`, {
         method: "DELETE",
+      }),
+  },
+  business: {
+    updateMenuVisibility: (menuKey: AppMenuKey, isEnabled: boolean) =>
+      apiFetch<{ menuVisibility: MenuVisibility; menuPackages: BusinessMenuPackage[] }>(`/api/business/menu-visibility/${menuKey}`, {
+        method: "PUT",
+        body: JSON.stringify({ isEnabled }),
+      }),
+    createMenuPackage: (payload: { name: string; description?: string; menuVisibility: MenuVisibility }) =>
+      apiFetch<{ menuVisibility: MenuVisibility; menuPackages: BusinessMenuPackage[] }>("/api/business/menu-packages", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    updateMenuPackage: (id: string, payload: { name: string; description?: string; menuVisibility: MenuVisibility }) =>
+      apiFetch<{ menuVisibility: MenuVisibility; menuPackages: BusinessMenuPackage[] }>(`/api/business/menu-packages/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      }),
+    deleteMenuPackage: (id: string) =>
+      apiFetch<{ menuVisibility: MenuVisibility; menuPackages: BusinessMenuPackage[] }>(`/api/business/menu-packages/${id}`, {
+        method: "DELETE",
+      }),
+    applyMenuPackage: (id: string) =>
+      apiFetch<{ menuVisibility: MenuVisibility; menuPackages: BusinessMenuPackage[] }>(`/api/business/menu-packages/${id}/apply`, {
+        method: "POST",
       }),
   },
   activity: {

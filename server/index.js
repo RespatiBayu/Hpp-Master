@@ -5,6 +5,7 @@ import express from "express";
 
 import { config } from "./config.js";
 import { pool, query, runMigrations, withTransaction } from "./db.js";
+import { businessMenuDefinitions, isBusinessMenuKey, mergeMenuVisibility, normalizeMenuVisibility } from "./menu-config.js";
 import { createSessionToken, hashPassword, hashSessionToken, verifyPassword } from "./security.js";
 import { asyncHandler, normalizeEmail, parseCookies, randomId, sendError, slugify, toNullableNumber } from "./utils.js";
 
@@ -19,10 +20,26 @@ const sessionCookieOptions = {
   path: "/",
 };
 
-const rolePriority = {
-  owner: 0,
-  admin: 1,
-  staff: 2,
+const normalizeBusinessRole = (role) => (role === "owner" ? "super_admin" : role);
+
+const isManagedRole = (role) => ["admin", "staff"].includes(normalizeBusinessRole(role));
+
+const canAssignRole = (actorRole, targetRole) => {
+  const actor = normalizeBusinessRole(actorRole);
+  const target = normalizeBusinessRole(targetRole);
+
+  if (actor === "super_admin") return target === "admin" || target === "staff";
+  if (actor === "admin") return target === "staff";
+  return false;
+};
+
+const canManageMemberRole = (actorRole, targetRole) => {
+  const actor = normalizeBusinessRole(actorRole);
+  const target = normalizeBusinessRole(targetRole);
+
+  if (actor === "super_admin") return target === "admin" || target === "staff";
+  if (actor === "admin") return target === "staff";
+  return false;
 };
 
 const mapUser = (row) => ({
@@ -84,7 +101,7 @@ const mapExpense = (row) => ({
 const mapMember = (row) => ({
   id: row.id,
   email: row.email,
-  role: row.role,
+  role: normalizeBusinessRole(row.role),
   createdAt: row.created_at,
   status: row.status,
 });
@@ -96,6 +113,52 @@ const mapActivity = (row) => ({
   action: row.action,
   details: row.details,
 });
+
+const mapMenuPackage = (row) => ({
+  id: row.id,
+  name: row.name,
+  description: row.description,
+  menuVisibility: normalizeMenuVisibility(row.menu_visibility_json || {}, false),
+  isActive: Boolean(row.is_active),
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const buildDisplayNameFromEmail = (email) => email.split("@")[0] || "User";
+
+const upsertBusinessMenuVisibility = async (client, businessId, menuVisibility) => {
+  for (const menu of businessMenuDefinitions) {
+    await client.query(
+      `
+        insert into business_menu_settings (id, business_id, menu_key, is_enabled)
+        values ($1, $2, $3, $4)
+        on conflict (business_id, menu_key)
+        do update set is_enabled = excluded.is_enabled, updated_at = now()
+      `,
+      [randomId("bms_"), businessId, menu.id, Boolean(menuVisibility[menu.id])]
+    );
+  }
+};
+
+const loadBusinessMenuState = async (clientOrPool, businessId) => {
+  const [menuSettingsResult, menuPackagesResult] = await Promise.all([
+    clientOrPool.query("select menu_key, is_enabled from business_menu_settings where business_id = $1", [businessId]),
+    clientOrPool.query(
+      `
+        select id, name, description, menu_visibility_json, is_active, created_at, updated_at
+        from business_menu_packages
+        where business_id = $1
+        order by is_active desc, created_at asc
+      `,
+      [businessId]
+    ),
+  ]);
+
+  return {
+    menuVisibility: mergeMenuVisibility(menuSettingsResult.rows),
+    menuPackages: menuPackagesResult.rows.map(mapMenuPackage),
+  };
+};
 
 const createSessionRecord = async (client, userId) => {
   const token = createSessionToken();
@@ -150,6 +213,7 @@ const getPrimaryMembership = async (clientOrPool, userId) => {
       where bm.user_id = $1 and bm.status = 'active'
       order by
         case bm.role
+          when 'super_admin' then 0
           when 'owner' then 0
           when 'admin' then 1
           else 2
@@ -160,11 +224,26 @@ const getPrimaryMembership = async (clientOrPool, userId) => {
     [userId]
   );
 
-  return rows[0] || null;
+  if (rows.length === 0) return null;
+
+  return {
+    ...rows[0],
+    role: normalizeBusinessRole(rows[0].role),
+  };
 };
 
 const loadBootstrap = async (businessId) => {
-  const [itemsResult, purchasesResult, productionsResult, productionMaterialsResult, salesResult, expensesResult, membersResult, activitiesResult] =
+  const [
+    itemsResult,
+    purchasesResult,
+    productionsResult,
+    productionMaterialsResult,
+    salesResult,
+    expensesResult,
+    membersResult,
+    activitiesResult,
+    menuState,
+  ] =
     await Promise.all([
       query("select * from items where business_id = $1 order by created_at asc", [businessId]),
       query("select * from purchases where business_id = $1 order by date desc, created_at desc", [businessId]),
@@ -185,6 +264,7 @@ const loadBootstrap = async (businessId) => {
           where bm.business_id = $1
           order by
             case bm.role
+              when 'super_admin' then 0
               when 'owner' then 0
               when 'admin' then 1
               else 2
@@ -194,6 +274,7 @@ const loadBootstrap = async (businessId) => {
         [businessId]
       ),
       query("select * from activity_logs where business_id = $1 order by created_at asc", [businessId]),
+      loadBusinessMenuState(pool, businessId),
     ]);
 
   return {
@@ -204,6 +285,8 @@ const loadBootstrap = async (businessId) => {
     expenses: expensesResult.rows.map(mapExpense),
     appUsers: membersResult.rows.map(mapMember),
     activities: activitiesResult.rows.map(mapActivity),
+    menuVisibility: menuState.menuVisibility,
+    menuPackages: menuState.menuPackages,
   };
 };
 
@@ -378,13 +461,13 @@ app.post(
         await client.query(
           `
             insert into business_members (id, business_id, user_id, role, status)
-            values ($1, $2, $3, 'owner', 'active')
+            values ($1, $2, $3, 'super_admin', 'active')
           `,
           [membershipId, businessId, userId]
         );
 
         primaryBusinessId = businessId;
-        primaryRole = "owner";
+        primaryRole = "super_admin";
       }
 
       const session = await createSessionRecord(client, userId);
@@ -805,23 +888,29 @@ app.delete(
 app.post(
   "/api/members",
   requireAuth,
-  requireRole("owner", "admin"),
+  requireRole("super_admin", "admin"),
   asyncHandler(async (req, res) => {
     const email = typeof req.body.email === "string" ? normalizeEmail(req.body.email) : "";
-    const role = typeof req.body.role === "string" ? req.body.role : "staff";
+    const role = normalizeBusinessRole(typeof req.body.role === "string" ? req.body.role : "staff");
+    const password = typeof req.body.password === "string" ? req.body.password : "";
 
     if (!email) {
       sendError(res, 400, "Email user wajib diisi.");
       return;
     }
 
-    if (!["admin", "staff"].includes(role)) {
+    if (!isManagedRole(role)) {
       sendError(res, 400, "Role user tidak valid.");
       return;
     }
 
-    if (req.auth.role === "admin" && role !== "staff") {
-      sendError(res, 403, "Admin hanya boleh menambahkan staff.");
+    if (!canAssignRole(req.auth.role, role)) {
+      sendError(res, 403, "Anda tidak memiliki izin untuk membuat role user tersebut.");
+      return;
+    }
+
+    if (password && password.length < 6) {
+      sendError(res, 400, "Kata sandi minimal 6 karakter.");
       return;
     }
 
@@ -860,6 +949,30 @@ app.post(
         return mapMember(result.rows[0]);
       }
 
+      if (password) {
+        const userId = randomId("usr_");
+        const passwordHash = await hashPassword(password);
+
+        await client.query(
+          `
+            insert into users (id, email, password_hash, display_name)
+            values ($1, $2, $3, $4)
+          `,
+          [userId, email, passwordHash, buildDisplayNameFromEmail(email)]
+        );
+
+        const result = await client.query(
+          `
+            insert into business_members (id, business_id, user_id, role, status)
+            values ($1, $2, $3, $4, 'active')
+            returning id, $5::text as email, role, status, created_at
+          `,
+          [memberId, req.auth.businessId, userId, role, email]
+        );
+
+        return mapMember(result.rows[0]);
+      }
+
       const result = await client.query(
         `
           insert into business_members (id, business_id, invitation_email, role, status)
@@ -876,10 +989,135 @@ app.post(
   })
 );
 
+app.put(
+  "/api/members/:id",
+  requireAuth,
+  requireRole("super_admin", "admin"),
+  asyncHandler(async (req, res) => {
+    const role = normalizeBusinessRole(typeof req.body.role === "string" ? req.body.role : "staff");
+    const password = typeof req.body.password === "string" ? req.body.password : "";
+
+    if (!isManagedRole(role)) {
+      sendError(res, 400, "Role user tidak valid.");
+      return;
+    }
+
+    if (!canAssignRole(req.auth.role, role)) {
+      sendError(res, 403, "Anda tidak memiliki izin untuk mengubah role user menjadi role tersebut.");
+      return;
+    }
+
+    if (password && password.length < 6) {
+      sendError(res, 400, "Kata sandi minimal 6 karakter.");
+      return;
+    }
+
+    const updated = await withTransaction(async (client) => {
+      const memberResult = await client.query(
+        `
+          select id, role, status, user_id, invitation_email
+          from business_members
+          where id = $1 and business_id = $2
+          limit 1
+        `,
+        [req.params.id, req.auth.businessId]
+      );
+
+      if (memberResult.rowCount === 0) {
+        const error = new Error("User bisnis tidak ditemukan.");
+        error.status = 404;
+        throw error;
+      }
+
+      const member = {
+        ...memberResult.rows[0],
+        role: normalizeBusinessRole(memberResult.rows[0].role),
+      };
+
+      if (!canManageMemberRole(req.auth.role, member.role)) {
+        const error = new Error("Anda tidak memiliki izin untuk mengubah user ini.");
+        error.status = 403;
+        throw error;
+      }
+
+      let userId = member.user_id;
+      let invitationEmail = member.invitation_email;
+      let status = member.status;
+
+      if (password) {
+        const passwordHash = await hashPassword(password);
+
+        if (member.status === "invited") {
+          const invitedEmail = normalizeEmail(member.invitation_email || "");
+          if (!invitedEmail) {
+            const error = new Error("Undangan user tidak memiliki email yang valid.");
+            error.status = 400;
+            throw error;
+          }
+
+          const existingUser = await client.query("select id from users where email = $1 limit 1", [invitedEmail]);
+
+          if (existingUser.rowCount > 0) {
+            userId = existingUser.rows[0].id;
+            await client.query(
+              `
+                update users
+                set password_hash = $2, updated_at = now()
+                where id = $1
+              `,
+              [userId, passwordHash]
+            );
+          } else {
+            userId = randomId("usr_");
+            await client.query(
+              `
+                insert into users (id, email, password_hash, display_name)
+                values ($1, $2, $3, $4)
+              `,
+              [userId, invitedEmail, passwordHash, buildDisplayNameFromEmail(invitedEmail)]
+            );
+          }
+
+          invitationEmail = null;
+          status = "active";
+        } else if (member.user_id) {
+          await client.query(
+            `
+              update users
+              set password_hash = $2, updated_at = now()
+              where id = $1
+            `,
+            [member.user_id, passwordHash]
+          );
+        }
+      }
+
+      const result = await client.query(
+        `
+          update business_members
+          set role = $3, user_id = $4, invitation_email = $5, status = $6
+          where id = $1 and business_id = $2
+          returning
+            id,
+            coalesce((select email from users where id = business_members.user_id), business_members.invitation_email) as email,
+            role,
+            status,
+            created_at
+        `,
+        [req.params.id, req.auth.businessId, role, userId, invitationEmail, status]
+      );
+
+      return mapMember(result.rows[0]);
+    });
+
+    res.json(updated);
+  })
+);
+
 app.delete(
   "/api/members/:id",
   requireAuth,
-  requireRole("owner", "admin"),
+  requireRole("super_admin", "admin"),
   asyncHandler(async (req, res) => {
     const memberResult = await query(
       `
@@ -898,18 +1136,211 @@ app.delete(
 
     const member = memberResult.rows[0];
 
-    if (member.role === "owner") {
-      sendError(res, 400, "Owner bisnis tidak dapat dihapus dari panel ini.");
+    if (!canManageMemberRole(req.auth.role, member.role)) {
+      sendError(res, 403, "Anda tidak memiliki izin untuk menghapus user ini.");
       return;
     }
 
-    if (req.auth.role === "admin" && member.role !== "staff") {
-      sendError(res, 403, "Admin hanya boleh menghapus staff.");
+    if (member.user_id && member.user_id === req.auth.userId) {
+      sendError(res, 400, "Akun yang sedang Anda pakai tidak bisa dihapus dari panel ini.");
       return;
     }
 
     await query("delete from business_members where id = $1 and business_id = $2", [req.params.id, req.auth.businessId]);
     res.json({ ok: true });
+  })
+);
+
+app.post(
+  "/api/business/menu-packages",
+  requireAuth,
+  requireRole("super_admin"),
+  asyncHandler(async (req, res) => {
+    const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
+    const description =
+      typeof req.body.description === "string" && req.body.description.trim() ? req.body.description.trim() : null;
+    const menuVisibility = normalizeMenuVisibility(req.body.menuVisibility || {}, false);
+
+    if (!name) {
+      sendError(res, 400, "Nama paket menu wajib diisi.");
+      return;
+    }
+
+    const response = await withTransaction(async (client) => {
+      await client.query(
+        `
+          insert into business_menu_packages (id, business_id, name, description, menu_visibility_json)
+          values ($1, $2, $3, $4, $5::jsonb)
+        `,
+        [randomId("bmp_"), req.auth.businessId, name, description, JSON.stringify(menuVisibility)]
+      );
+
+      return loadBusinessMenuState(client, req.auth.businessId);
+    });
+
+    res.status(201).json(response);
+  })
+);
+
+app.put(
+  "/api/business/menu-packages/:id",
+  requireAuth,
+  requireRole("super_admin"),
+  asyncHandler(async (req, res) => {
+    const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
+    const description =
+      typeof req.body.description === "string" && req.body.description.trim() ? req.body.description.trim() : null;
+    const menuVisibility = normalizeMenuVisibility(req.body.menuVisibility || {}, false);
+
+    if (!name) {
+      sendError(res, 400, "Nama paket menu wajib diisi.");
+      return;
+    }
+
+    const response = await withTransaction(async (client) => {
+      const packageResult = await client.query(
+        `
+          select id, is_active
+          from business_menu_packages
+          where id = $1 and business_id = $2
+          limit 1
+        `,
+        [req.params.id, req.auth.businessId]
+      );
+
+      if (packageResult.rowCount === 0) {
+        const error = new Error("Paket menu tidak ditemukan.");
+        error.status = 404;
+        throw error;
+      }
+
+      await client.query(
+        `
+          update business_menu_packages
+          set name = $3, description = $4, menu_visibility_json = $5::jsonb, updated_at = now()
+          where id = $1 and business_id = $2
+        `,
+        [req.params.id, req.auth.businessId, name, description, JSON.stringify(menuVisibility)]
+      );
+
+      if (packageResult.rows[0].is_active) {
+        await upsertBusinessMenuVisibility(client, req.auth.businessId, menuVisibility);
+      }
+
+      return loadBusinessMenuState(client, req.auth.businessId);
+    });
+
+    res.json(response);
+  })
+);
+
+app.delete(
+  "/api/business/menu-packages/:id",
+  requireAuth,
+  requireRole("super_admin"),
+  asyncHandler(async (req, res) => {
+    const response = await withTransaction(async (client) => {
+      const packageResult = await client.query(
+        `
+          select id
+          from business_menu_packages
+          where id = $1 and business_id = $2
+          limit 1
+        `,
+        [req.params.id, req.auth.businessId]
+      );
+
+      if (packageResult.rowCount === 0) {
+        const error = new Error("Paket menu tidak ditemukan.");
+        error.status = 404;
+        throw error;
+      }
+
+      await client.query("delete from business_menu_packages where id = $1 and business_id = $2", [req.params.id, req.auth.businessId]);
+      return loadBusinessMenuState(client, req.auth.businessId);
+    });
+
+    res.json(response);
+  })
+);
+
+app.post(
+  "/api/business/menu-packages/:id/apply",
+  requireAuth,
+  requireRole("super_admin"),
+  asyncHandler(async (req, res) => {
+    const response = await withTransaction(async (client) => {
+      const packageResult = await client.query(
+        `
+          select id, menu_visibility_json
+          from business_menu_packages
+          where id = $1 and business_id = $2
+          limit 1
+        `,
+        [req.params.id, req.auth.businessId]
+      );
+
+      if (packageResult.rowCount === 0) {
+        const error = new Error("Paket menu tidak ditemukan.");
+        error.status = 404;
+        throw error;
+      }
+
+      const packageVisibility = normalizeMenuVisibility(packageResult.rows[0].menu_visibility_json || {}, false);
+
+      await client.query("update business_menu_packages set is_active = false where business_id = $1", [req.auth.businessId]);
+      await client.query(
+        `
+          update business_menu_packages
+          set is_active = true, updated_at = now()
+          where id = $1 and business_id = $2
+        `,
+        [req.params.id, req.auth.businessId]
+      );
+
+      await upsertBusinessMenuVisibility(client, req.auth.businessId, packageVisibility);
+      return loadBusinessMenuState(client, req.auth.businessId);
+    });
+
+    res.json(response);
+  })
+);
+
+app.put(
+  "/api/business/menu-visibility/:menuKey",
+  requireAuth,
+  requireRole("super_admin"),
+  asyncHandler(async (req, res) => {
+    const menuKey = req.params.menuKey;
+    const isEnabled = req.body.isEnabled;
+
+    if (!isBusinessMenuKey(menuKey)) {
+      sendError(res, 400, "Menu bisnis tidak valid.");
+      return;
+    }
+
+    if (typeof isEnabled !== "boolean") {
+      sendError(res, 400, "Status menu harus berupa boolean.");
+      return;
+    }
+
+    await query(
+      `
+        insert into business_menu_settings (id, business_id, menu_key, is_enabled)
+        values ($1, $2, $3, $4)
+        on conflict (business_id, menu_key)
+        do update set is_enabled = excluded.is_enabled, updated_at = now()
+      `,
+      [randomId("bms_"), req.auth.businessId, menuKey, isEnabled]
+    );
+
+    await query("update business_menu_packages set is_active = false where business_id = $1", [req.auth.businessId]);
+    const menuState = await loadBusinessMenuState(pool, req.auth.businessId);
+
+    res.json({
+      menuVisibility: menuState.menuVisibility,
+      menuPackages: menuState.menuPackages,
+    });
   })
 );
 

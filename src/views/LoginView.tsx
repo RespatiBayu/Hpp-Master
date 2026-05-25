@@ -1,26 +1,17 @@
 import React, { useState } from "react";
-import { Lock, LogIn, Mail, Store } from "lucide-react";
+import { Lock, LogIn, Mail, ShieldCheck } from "lucide-react";
 
 import { useAppContext } from "../store/AppContext";
 
 export default function LoginView() {
-  const { loginWithEmail, signUpWithEmail, loginError } = useAppContext();
-
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const { loginWithEmail, loginError } = useAppContext();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [businessName, setBusinessName] = useState("");
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!email || !password) return;
-
-    if (mode === "login") {
-      await loginWithEmail(email, password);
-      return;
-    }
-
-    await signUpWithEmail(email, password, businessName || undefined);
+    await loginWithEmail(email, password);
   };
 
   return (
@@ -32,31 +23,15 @@ export default function LoginView() {
           </div>
           <h1 className="mb-2 text-2xl font-bold tracking-tight text-slate-900">HPP Master UMKM</h1>
           <p className="text-sm leading-relaxed text-slate-500">
-            {mode === "login"
-              ? "Masuk ke bisnis Anda dengan email dan kata sandi."
-              : "Daftarkan bisnis baru, atau pakai email yang sudah diundang admin."}
+            Masuk ke bisnis Anda dengan email dan kata sandi yang sudah dibuatkan oleh super admin.
           </p>
         </div>
 
-        <div className="mb-6 grid grid-cols-2 rounded-2xl bg-slate-100 p-1">
-          <button
-            type="button"
-            onClick={() => setMode("login")}
-            className={`rounded-xl px-4 py-2.5 text-sm font-bold transition-colors ${
-              mode === "login" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            Masuk
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("signup")}
-            className={`rounded-xl px-4 py-2.5 text-sm font-bold transition-colors ${
-              mode === "signup" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            Daftar
-          </button>
+        <div className="mb-6 flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
+          <p className="leading-relaxed">
+            Fitur <strong>Daftar</strong> disembunyikan dari halaman depan. Untuk akun baru atau aktivasi user, hubungi super admin bisnis Anda.
+          </p>
         </div>
 
         {loginError && (
@@ -95,33 +70,12 @@ export default function LoginView() {
             />
           </div>
 
-          {mode === "signup" && (
-            <div className="relative">
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-                <Store className="h-5 w-5 text-slate-400" />
-              </div>
-              <input
-                type="text"
-                value={businessName}
-                onChange={(event) => setBusinessName(event.target.value)}
-                placeholder="Nama Bisnis (kosongkan jika Anda sudah diundang)"
-                className="w-full rounded-xl border border-slate-100 bg-slate-50 py-3.5 pl-11 pr-4 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              />
-            </div>
-          )}
-
-          {mode === "signup" && (
-            <p className="text-xs leading-relaxed text-slate-500">
-              Jika email Anda sudah ditambahkan oleh owner/admin, akun akan otomatis masuk ke bisnis tersebut. Jika belum, nama bisnis akan dipakai untuk membuat tenant baru.
-            </p>
-          )}
-
           <button
             type="submit"
             className="mt-2 flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-800"
           >
             <LogIn className="mr-2 h-4 w-4" />
-            {mode === "login" ? "Masuk dengan Email" : "Buat Akun Bisnis"}
+            Masuk dengan Email
           </button>
         </form>
       </div>
