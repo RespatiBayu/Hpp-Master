@@ -132,19 +132,21 @@ export const parseBulkUserUploadFile = (text: string): BulkUserUploadRow[] => {
   const emailIndex = resolveHeaderIndex(headers, ["email", "e_mail", "mail"]);
   const roleIndex = resolveHeaderIndex(headers, ["role", "peran"]);
   const passwordIndex = resolveHeaderIndex(headers, ["password", "kata_sandi", "kata_sandi_baru"]);
-  const businessIdIndex = resolveHeaderIndex(headers, ["business_id", "id_bisnis"]);
   const businessNameIndex = resolveHeaderIndex(headers, ["business_name", "business", "bisnis", "nama_bisnis"]);
 
   if (emailIndex < 0) {
     throw new Error("Header wajib memuat kolom `email`.");
   }
 
+  if (passwordIndex < 0) {
+    throw new Error("Header wajib memuat kolom `password` agar akun hasil bulk upload langsung aktif.");
+  }
+
   return rows.slice(1).map((row, index) => ({
     rowNumber: index + 2,
     email: (row[emailIndex] || "").trim(),
     role: roleIndex >= 0 ? normalizeRoleInput(row[roleIndex] || "") : "",
-    password: passwordIndex >= 0 ? (row[passwordIndex] || "").trim() : "",
-    businessId: businessIdIndex >= 0 ? (row[businessIdIndex] || "").trim() : "",
+    password: (row[passwordIndex] || "").trim(),
     businessName: businessNameIndex >= 0 ? (row[businessNameIndex] || "").trim() : "",
   }));
 };

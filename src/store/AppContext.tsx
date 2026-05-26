@@ -55,7 +55,16 @@ interface AppState {
   editExpense: (id: string, updatedExpense: Partial<Expense>) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
   refreshData: () => Promise<void>;
-  addAppUser: (email: string, role: BusinessRole, password?: string, targetBusinessId?: string) => Promise<void>;
+  addAppUser: (
+    email: string,
+    role: BusinessRole,
+    options?: {
+      password?: string;
+      businessId?: string;
+      businessName?: string;
+      createBusinessOnRequestedName?: boolean;
+    }
+  ) => Promise<void>;
   bulkAddAppUsers: (rows: BulkUserUploadRow[], defaultBusinessId?: string) => Promise<BulkUserUploadResult>;
   updateAppUser: (id: string, role: BusinessRole, password?: string) => Promise<void>;
   deleteAppUser: (id: string) => Promise<void>;
@@ -337,9 +346,25 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     await logActivity("DELETE_EXPENSE", `Menghapus beban: ${current?.description || id}`);
   };
 
-  const addAppUser = async (email: string, role: BusinessRole, password?: string, targetBusinessId?: string) => {
-    const created = await appApi.members.create(email, role, password, targetBusinessId);
+  const addAppUser = async (
+    email: string,
+    role: BusinessRole,
+    options?: {
+      password?: string;
+      businessId?: string;
+      businessName?: string;
+      createBusinessOnRequestedName?: boolean;
+    }
+  ) => {
+    const created = await appApi.members.create(email, role, options);
     setAppUsers((prev) => [...prev, created]);
+    setBusinesses((prev) => {
+      if (!created.businessId || !created.businessName || prev.some((business) => business.id === created.businessId)) {
+        return prev;
+      }
+
+      return [...prev, { id: created.businessId, name: created.businessName, allowAdminCreateStaff: true }];
+    });
     const targetBusinessSuffix = created.businessName ? ` di bisnis ${created.businessName}` : "";
     await logActivity(
       "ADD_USER",

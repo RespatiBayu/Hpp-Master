@@ -160,10 +160,26 @@ export const appApi = {
       }),
   },
   members: {
-    create: (email: string, role: BusinessRole, password?: string, businessId?: string) =>
+    create: (
+      email: string,
+      role: BusinessRole,
+      options?: {
+        password?: string;
+        businessId?: string;
+        businessName?: string;
+        createBusinessOnRequestedName?: boolean;
+      }
+    ) =>
       apiFetch<AppUser>("/api/members", {
         method: "POST",
-        body: JSON.stringify({ email, role, password, businessId }),
+        body: JSON.stringify({
+          email,
+          role,
+          password: options?.password,
+          businessId: options?.businessId,
+          businessName: options?.businessName,
+          createBusinessOnRequestedName: options?.createBusinessOnRequestedName,
+        }),
       }),
     bulkCreate: (rows: BulkUserUploadRow[], defaultBusinessId?: string) =>
       apiFetch<BulkUserUploadResult>("/api/members/bulk", {

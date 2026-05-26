@@ -235,7 +235,7 @@ const resolveManagedBusiness = async (client, actorRole, actorBusinessId, option
     }
 
     if (businessResult.rowCount > 1) {
-      throw createHttpError(409, `Nama bisnis "${requestedBusinessName}" tidak unik. Gunakan business_id.`);
+      throw createHttpError(409, `Nama bisnis "${requestedBusinessName}" tidak unik. Pastikan nama bisnis unik sebelum bulk upload admin.`);
     }
 
     return businessResult.rows[0];
@@ -264,6 +264,7 @@ const createBusinessMemberRecord = async (client, payload) => {
   const requestedRole = normalizeBusinessRole(typeof payload.role === "string" ? payload.role : "");
   const role = requestedRole || (isCreatingBusiness ? "super_admin" : "staff");
   const password = typeof payload.password === "string" ? payload.password : "";
+  const requirePassword = Boolean(payload.requirePassword);
   const targetBusiness = await resolveManagedBusiness(client, payload.actorRole, payload.actorBusinessId, {
     requestedBusinessId: payload.requestedBusinessId,
     requestedBusinessName,
@@ -313,6 +314,10 @@ const createBusinessMemberRecord = async (client, payload) => {
 
   const existingUser = await client.query("select id from users where email = $1 limit 1", [email]);
   const memberId = randomId("mem_");
+
+  if (requirePassword && existingUser.rowCount === 0 && !password) {
+    throw createHttpError(400, "Password wajib diisi agar akun hasil bulk upload langsung aktif.");
+  }
 
   if (existingUser.rowCount > 0) {
     const result = await client.query(
@@ -1209,6 +1214,14 @@ app.post(
   requireAuth,
   requireRole("super_admin", "admin"),
   asyncHandler(async (req, res) => {
+    const createBusinessOnRequestedName = Boolean(req.body.createBusinessOnRequestedName);
+    const requestedBusinessName = typeof req.body.businessName === "string" ? req.body.businessName.trim() : "";
+
+    if (createBusinessOnRequestedName && !requestedBusinessName) {
+      sendError(res, 400, "Nama bisnis baru wajib diisi.");
+      return;
+    }
+
     const created = await withTransaction(async (client) =>
       createBusinessMemberRecord(client, {
         actorRole: req.auth.role,
@@ -1216,8 +1229,10 @@ app.post(
         email: req.body.email,
         role: req.body.role,
         password: req.body.password,
-        requestedBusinessId: req.body.businessId,
+        requestedBusinessId: createBusinessOnRequestedName ? undefined : req.body.businessId,
+        requestedBusinessName,
         fallbackBusinessId: req.auth.businessId,
+        createBusinessOnRequestedName,
       })
     );
 
@@ -1251,16 +1266,22 @@ app.post(
       const rowNumber = Number.isFinite(Number(row.rowNumber)) ? Number(row.rowNumber) : index + 2;
 
       try {
+        const requestedRole = typeof row.role === "string" ? normalizeBusinessRole(row.role) : "";
+
+        if (requestedRole && requestedRole !== "admin") {
+          throw createHttpError(400, "Bulk upload admin hanya menerima role admin.");
+        }
+
         const member = await withTransaction(async (client) =>
           createBusinessMemberRecord(client, {
             actorRole: req.auth.role,
             actorBusinessId: req.auth.businessId,
             email: row.email,
-            role: row.role,
+            role: "admin",
             password: row.password,
-            requestedBusinessId: row.businessId,
             requestedBusinessName: row.businessName,
             fallbackBusinessId: defaultBusinessId || req.auth.businessId,
+            requirePassword: true,
           })
         );
 
@@ -1269,8 +1290,7 @@ app.post(
         errors.push({
           rowNumber,
           email: typeof row.email === "string" ? normalizeEmail(row.email) : "",
-          role: typeof row.role === "string" && row.role.trim() ? row.role.trim() : undefined,
-          businessId: typeof row.businessId === "string" && row.businessId.trim() ? row.businessId.trim() : undefined,
+          role: "admin",
           businessName: typeof row.businessName === "string" && row.businessName.trim() ? row.businessName.trim() : undefined,
           message: error?.message || "Gagal memproses user.",
         });

@@ -12,9 +12,27 @@ const roleBadgeClass: Record<BusinessRole, string> = {
   staff: "bg-slate-100 text-slate-700",
 };
 
+const CREATE_NEW_BUSINESS_OPTION = "__new_business__";
+
 const bulkUploadTemplateCsv = `email,password,business_name
-admin@alphakitchen.com,admin123,Alpha Kitchen
-admin@betabites.com,,Beta Bites`;
+admin@alphakitchen.com,AdminAlpha123,Alpha Kitchen
+admin@betabites.com,AdminBeta123,Beta Bites`;
+
+const getBulkRowNumbersLabel = (rows: BulkUserUploadRow[]) => rows.slice(0, 5).map((row) => row.rowNumber).join(", ");
+
+const getBulkUploadValidationError = (rows: BulkUserUploadRow[]) => {
+  const missingPasswordRows = rows.filter((row) => !row.password);
+  if (missingPasswordRows.length > 0) {
+    return `Password wajib diisi agar akun hasil bulk upload langsung aktif. Periksa baris ${getBulkRowNumbersLabel(missingPasswordRows)}.`;
+  }
+
+  const invalidRoleRows = rows.filter((row) => row.role && row.role !== "admin");
+  if (invalidRoleRows.length > 0) {
+    return `Bulk upload ini khusus admin bisnis. Kolom role hanya boleh berisi admin. Periksa baris ${getBulkRowNumbersLabel(invalidRoleRows)}.`;
+  }
+
+  return null;
+};
 
 export default function UserManagementSection() {
   const { businessId, businessName, businessRole, businesses, appUsers, addAppUser, bulkAddAppUsers, updateAppUser, deleteAppUser } = useAppContext();
@@ -51,6 +69,8 @@ export default function UserManagementSection() {
   const [newRole, setNewRole] = useState<BusinessRole>(defaultRole);
   const [newBusinessId, setNewBusinessId] = useState(businessId || "");
   const [newPassword, setNewPassword] = useState("");
+  const [newBusinessNameInput, setNewBusinessNameInput] = useState("");
+  const [addUserError, setAddUserError] = useState<string | null>(null);
   const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
   const [bulkRows, setBulkRows] = useState<BulkUserUploadRow[]>([]);
   const [bulkFileName, setBulkFileName] = useState("");
@@ -77,19 +97,27 @@ export default function UserManagementSection() {
     }
 
     const preferredBusinessId = businessId || availableBusinesses[0]?.id || "";
-    setNewBusinessId((current) => (current && availableBusinesses.some((business) => business.id === current) ? current : preferredBusinessId));
+    setNewBusinessId((current) => {
+      if (current === CREATE_NEW_BUSINESS_OPTION) return current;
+      return current && availableBusinesses.some((business) => business.id === current) ? current : preferredBusinessId;
+    });
     setBulkDefaultBusinessId((current) => (current && availableBusinesses.some((business) => business.id === current) ? current : preferredBusinessId));
   }, [availableBusinesses, businessId, isGlobalUserList]);
 
   useEffect(() => {
     if (!canCreateManagedUsers) {
       setIsAddingUser(false);
+      setAddUserError(null);
     }
   }, [canCreateManagedUsers]);
 
   const previewBulkRows = bulkRows.slice(0, 5);
+  const isCreatingNewBusiness = isGlobalUserList && newBusinessId === CREATE_NEW_BUSINESS_OPTION;
   const selectedBulkBusinessName =
     availableBusinesses.find((business) => business.id === bulkDefaultBusinessId)?.name || businessName || "bisnis default yang dipilih";
+  const selectedSingleBusinessName = isCreatingNewBusiness
+    ? newBusinessNameInput.trim() || "bisnis baru"
+    : availableBusinesses.find((business) => business.id === newBusinessId)?.name || "yang dipilih";
 
   const getBulkRoleLabel = (role?: string) => {
     if (!role) return `${getRoleLabel("admin")} (default)`;
@@ -119,15 +147,30 @@ export default function UserManagementSection() {
 
   const handleAddUser = async (event: React.FormEvent) => {
     event.preventDefault();
+    setAddUserError(null);
     if (!newEmail || !managedRole || !canCreateManagedUsers) return;
     if (isGlobalUserList && !newBusinessId) return;
+    if (isCreatingNewBusiness && !newBusinessNameInput.trim()) {
+      setAddUserError("Nama bisnis baru wajib diisi.");
+      return;
+    }
 
-    await addAppUser(newEmail, managedRole, newPassword || undefined, isGlobalUserList ? newBusinessId : undefined);
-    setNewEmail("");
-    setNewRole(defaultRole);
-    setNewBusinessId(businessId || availableBusinesses[0]?.id || "");
-    setNewPassword("");
-    setIsAddingUser(false);
+    try {
+      await addAppUser(newEmail, managedRole, {
+        password: newPassword || undefined,
+        businessId: isGlobalUserList && !isCreatingNewBusiness ? newBusinessId : undefined,
+        businessName: isCreatingNewBusiness ? newBusinessNameInput.trim() : undefined,
+        createBusinessOnRequestedName: isCreatingNewBusiness,
+      });
+      setNewEmail("");
+      setNewRole(defaultRole);
+      setNewBusinessId(businessId || availableBusinesses[0]?.id || "");
+      setNewBusinessNameInput("");
+      setNewPassword("");
+      setIsAddingUser(false);
+    } catch (error: any) {
+      setAddUserError(error.message || "User baru gagal disimpan.");
+    }
   };
 
   const resetBulkUploadSelection = () => {
@@ -164,9 +207,10 @@ export default function UserManagementSection() {
 
     try {
       const parsedRows = parseBulkUserUploadFile(await file.text());
+      const validationError = getBulkUploadValidationError(parsedRows);
       setBulkRows(parsedRows);
       setBulkFileName(file.name);
-      setBulkParseError(null);
+      setBulkParseError(validationError);
     } catch (error: any) {
       setBulkRows([]);
       setBulkFileName(file.name);
@@ -176,7 +220,7 @@ export default function UserManagementSection() {
 
   const handleBulkUpload = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!isGlobalUserList || bulkRows.length === 0 || !bulkDefaultBusinessId) return;
+    if (!isGlobalUserList || bulkRows.length === 0 || !bulkDefaultBusinessId || bulkParseError) return;
 
     setIsUploadingBulk(true);
     setBulkUploadError(null);
@@ -238,6 +282,7 @@ export default function UserManagementSection() {
                   type="button"
                   onClick={() => {
                     setIsAddingUser(false);
+                    setAddUserError(null);
                     setIsBulkUploadOpen((current) => !current);
                   }}
                   className="inline-flex w-full items-center justify-center rounded-lg bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700 transition-colors hover:bg-emerald-100 sm:w-auto"
@@ -250,6 +295,7 @@ export default function UserManagementSection() {
                   type="button"
                   onClick={() => {
                     setIsBulkUploadOpen(false);
+                    setAddUserError(null);
                     setIsAddingUser((current) => !current);
                   }}
                   className="inline-flex w-full items-center justify-center rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-600 transition-colors hover:bg-blue-100 sm:w-auto"
@@ -274,10 +320,18 @@ export default function UserManagementSection() {
         {isAddingUser && canManageBusinessUsers && canCreateManagedUsers && (
           <form onSubmit={handleAddUser} className="mb-6 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
             <h3 className="mb-3 text-sm font-bold text-slate-900">{addFormTitle}</h3>
+            {addUserError ? (
+              <div className="mb-3 flex items-start gap-3 rounded-lg border border-red-100 bg-red-50 px-3 py-3 text-sm text-red-700">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{addUserError}</span>
+              </div>
+            ) : null}
             <div
               className={`grid grid-cols-1 gap-3 ${
                 isGlobalUserList
-                  ? "md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1fr)_auto]"
+                  ? isCreatingNewBusiness
+                    ? "md:grid-cols-[minmax(0,1.3fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+                    : "md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1fr)_auto]"
                   : "md:grid-cols-[minmax(0,1.5fr)_minmax(0,0.8fr)_minmax(0,1fr)_auto]"
               }`}
             >
@@ -285,7 +339,10 @@ export default function UserManagementSection() {
                 type="email"
                 required
                 value={newEmail}
-                onChange={(event) => setNewEmail(event.target.value)}
+                onChange={(event) => {
+                  setNewEmail(event.target.value);
+                  setAddUserError(null);
+                }}
                 placeholder="Alamat Email User"
                 className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
@@ -293,27 +350,52 @@ export default function UserManagementSection() {
                 {getRoleLabel(managedRole)}
               </div>
               {isGlobalUserList ? (
-                <select
-                  required
-                  value={newBusinessId}
-                  onChange={(event) => setNewBusinessId(event.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                >
-                  <option value="" disabled>
-                    Pilih Bisnis
-                  </option>
-                  {availableBusinesses.map((business) => (
-                    <option key={business.id} value={business.id}>
-                      {business.name}
+                <>
+                  <select
+                    required
+                    value={newBusinessId}
+                    onChange={(event) => {
+                      setNewBusinessId(event.target.value);
+                      setAddUserError(null);
+                      if (event.target.value !== CREATE_NEW_BUSINESS_OPTION) {
+                        setNewBusinessNameInput("");
+                      }
+                    }}
+                    className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    <option value="" disabled>
+                      Pilih Bisnis
                     </option>
-                  ))}
-                </select>
+                    {availableBusinesses.map((business) => (
+                      <option key={business.id} value={business.id}>
+                        {business.name}
+                      </option>
+                    ))}
+                    <option value={CREATE_NEW_BUSINESS_OPTION}>+ Buat Bisnis Baru</option>
+                  </select>
+                  {isCreatingNewBusiness ? (
+                    <input
+                      type="text"
+                      required
+                      value={newBusinessNameInput}
+                      onChange={(event) => {
+                        setNewBusinessNameInput(event.target.value);
+                        setAddUserError(null);
+                      }}
+                      placeholder="Nama Bisnis Baru"
+                      className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  ) : null}
+                </>
               ) : null}
               <input
                 type="password"
                 minLength={6}
                 value={newPassword}
-                onChange={(event) => setNewPassword(event.target.value)}
+                onChange={(event) => {
+                  setNewPassword(event.target.value);
+                  setAddUserError(null);
+                }}
                 placeholder="Password opsional"
                 className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
@@ -324,7 +406,7 @@ export default function UserManagementSection() {
             <p className="mt-2 text-xs leading-relaxed text-slate-500">
               Isi password jika akun ingin langsung aktif. Jika dikosongkan, user akan tersimpan sebagai undangan dan bisa diaktifkan nanti dari panel ini.
               {isGlobalUserList
-                ? ` Admin baru akan ditambahkan ke bisnis ${availableBusinesses.find((business) => business.id === newBusinessId)?.name || "yang dipilih"}. Setiap bisnis hanya bisa memiliki 1 admin.`
+                ? ` Admin baru akan ditambahkan ke bisnis ${selectedSingleBusinessName}. Setiap bisnis hanya bisa memiliki 1 admin.`
                 : businessName
                   ? ` Staff baru akan ditambahkan ke bisnis aktif: ${businessName}.`
                   : ""}
@@ -338,10 +420,10 @@ export default function UserManagementSection() {
               <div>
                 <h3 className="text-sm font-bold text-slate-900">Bulk Upload Admin Bisnis</h3>
                 <p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-600">
-                  Upload file CSV atau TSV untuk membuat banyak admin bisnis sekaligus. Kolom wajib hanya <strong>email</strong>. Kolom
-                  <strong> password</strong>, <strong>business_name</strong>, dan <strong>business_id</strong> bersifat opsional. Jika kolom
-                  bisnis dikosongkan, sistem memakai bisnis default yang Anda pilih di bawah. Kolom <strong>role</strong> tetap didukung, tetapi
-                  hanya menerima nilai <strong>admin</strong>.
+                  Upload file CSV atau TSV untuk membuat banyak admin bisnis sekaligus. Kolom wajib adalah <strong>email</strong> dan
+                  <strong> password</strong>. Kolom <strong>business_name</strong> bersifat opsional. Jika kolom bisnis dikosongkan, sistem
+                  memakai bisnis default yang Anda pilih di bawah. Kolom <strong>role</strong> tetap didukung, tetapi hanya menerima nilai
+                  <strong>admin</strong>.
                 </p>
               </div>
               <button
@@ -401,7 +483,7 @@ export default function UserManagementSection() {
                 Role kosong: {getRoleLabel("admin")}
               </span>
               <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-slate-600">
-                Password kosong akan membuat undangan user
+                Password wajib di setiap baris
               </span>
               <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-slate-600">
                 Bisnis default: {selectedBulkBusinessName}
@@ -464,8 +546,8 @@ export default function UserManagementSection() {
                           <td className="px-3 py-2 text-sm text-slate-500">{row.rowNumber}</td>
                           <td className="px-3 py-2 text-sm font-medium text-slate-900">{row.email || "-"}</td>
                           <td className="px-3 py-2 text-sm text-slate-500">{getBulkRoleLabel(row.role)}</td>
-                          <td className="px-3 py-2 text-sm text-slate-500">{getBusinessLabel(row.businessId, row.businessName)}</td>
-                          <td className="px-3 py-2 text-sm text-slate-500">{row.password ? "Aktif" : "Undangan"}</td>
+                          <td className="px-3 py-2 text-sm text-slate-500">{getBusinessLabel(undefined, row.businessName)}</td>
+                          <td className="px-3 py-2 text-sm text-slate-500">{row.password ? "Aktif" : "Password wajib"}</td>
                         </tr>
                       ))}
                     </tbody>
