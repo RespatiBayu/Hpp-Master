@@ -35,7 +35,7 @@ const canAssignRole = (actorRole, targetRole) => {
   const actor = normalizeBusinessRole(actorRole);
   const target = normalizeBusinessRole(targetRole);
 
-  if (actor === "super_admin") return target === "super_admin" || target === "admin" || target === "staff";
+  if (actor === "super_admin") return target === "admin";
   if (actor === "admin") return target === "staff";
   return false;
 };
@@ -44,7 +44,7 @@ const canManageMemberRole = (actorRole, targetRole) => {
   const actor = normalizeBusinessRole(actorRole);
   const target = normalizeBusinessRole(targetRole);
 
-  if (actor === "super_admin") return target === "super_admin" || target === "admin" || target === "staff";
+  if (actor === "super_admin") return target === "admin";
   if (actor === "admin") return target === "staff";
   return false;
 };
@@ -118,6 +118,7 @@ const mapMember = (row) => ({
 const mapBusiness = (row) => ({
   id: row.id,
   name: row.name,
+  allowAdminCreateStaff: Boolean(row.allow_admin_create_staff),
 });
 
 const mapActivity = (row) => ({
@@ -146,6 +147,30 @@ const createHttpError = (status, message) => {
   return error;
 };
 
+const assertBusinessCanHaveAdmin = async (client, businessId, excludeMemberId = null) => {
+  const businessResult = await client.query("select id from businesses where id = $1 limit 1 for update", [businessId]);
+  if (businessResult.rowCount === 0) {
+    throw createHttpError(404, "Bisnis target tidak ditemukan.");
+  }
+
+  const params = excludeMemberId ? [businessId, excludeMemberId] : [businessId];
+  const existingAdmin = await client.query(
+    `
+      select id
+      from business_members
+      where business_id = $1
+        and role = 'admin'
+        ${excludeMemberId ? "and id <> $2" : ""}
+      limit 1
+    `,
+    params
+  );
+
+  if (existingAdmin.rowCount > 0) {
+    throw createHttpError(409, "Bisnis ini sudah memiliki 1 admin.");
+  }
+};
+
 const resolveManagedBusiness = async (client, actorRole, actorBusinessId, options = {}) => {
   const requestedBusinessId = typeof options.requestedBusinessId === "string" ? options.requestedBusinessId.trim() : "";
   const requestedBusinessName = typeof options.requestedBusinessName === "string" ? options.requestedBusinessName.trim() : "";
@@ -157,7 +182,10 @@ const resolveManagedBusiness = async (client, actorRole, actorBusinessId, option
       throw createHttpError(400, "Bisnis target wajib dipilih.");
     }
 
-    const businessResult = await client.query("select id, name from businesses where id = $1 limit 1", [actorBusinessId]);
+    const businessResult = await client.query(
+      "select id, name, allow_admin_create_staff from businesses where id = $1 limit 1",
+      [actorBusinessId]
+    );
     if (businessResult.rowCount === 0) {
       throw createHttpError(404, "Bisnis target tidak ditemukan.");
     }
@@ -166,7 +194,10 @@ const resolveManagedBusiness = async (client, actorRole, actorBusinessId, option
   }
 
   if (requestedBusinessId) {
-    const businessResult = await client.query("select id, name from businesses where id = $1 limit 1", [requestedBusinessId]);
+    const businessResult = await client.query(
+      "select id, name, allow_admin_create_staff from businesses where id = $1 limit 1",
+      [requestedBusinessId]
+    );
     if (businessResult.rowCount === 0) {
       throw createHttpError(404, "Bisnis target tidak ditemukan.");
     }
@@ -179,23 +210,18 @@ const resolveManagedBusiness = async (client, actorRole, actorBusinessId, option
       const businessId = randomId("biz_");
       const slug = await generateUniqueBusinessSlug(client, requestedBusinessName);
 
-      await client.query(
-        `
-          insert into businesses (id, name, slug)
-          values ($1, $2, $3)
-        `,
-        [businessId, requestedBusinessName, slug]
-      );
+      await client.query("insert into businesses (id, name, slug) values ($1, $2, $3)", [businessId, requestedBusinessName, slug]);
 
       return {
         id: businessId,
         name: requestedBusinessName,
+        allow_admin_create_staff: true,
       };
     }
 
     const businessResult = await client.query(
       `
-        select id, name
+        select id, name, allow_admin_create_staff
         from businesses
         where lower(name) = lower($1)
         order by created_at asc
@@ -220,7 +246,10 @@ const resolveManagedBusiness = async (client, actorRole, actorBusinessId, option
     throw createHttpError(400, "Bisnis target wajib dipilih.");
   }
 
-  const businessResult = await client.query("select id, name from businesses where id = $1 limit 1", [targetBusinessId]);
+  const businessResult = await client.query(
+    "select id, name, allow_admin_create_staff from businesses where id = $1 limit 1",
+    [targetBusinessId]
+  );
   if (businessResult.rowCount === 0) {
     throw createHttpError(404, "Bisnis target tidak ditemukan.");
   }
@@ -254,8 +283,16 @@ const createBusinessMemberRecord = async (client, payload) => {
     throw createHttpError(403, "Anda tidak memiliki izin untuk membuat role user tersebut.");
   }
 
+  if (normalizeBusinessRole(payload.actorRole) === "admin" && !targetBusiness.allow_admin_create_staff) {
+    throw createHttpError(403, "Super admin belum mengizinkan admin bisnis ini membuat user staff.");
+  }
+
   if (password && password.length < 6) {
     throw createHttpError(400, "Kata sandi minimal 6 karakter.");
+  }
+
+  if (role === "admin") {
+    await assertBusinessCanHaveAdmin(client, targetBusiness.id);
   }
 
   const duplicate = await client.query(
@@ -428,7 +465,8 @@ const getPrimaryMembership = async (clientOrPool, userId) => {
         bm.id as membership_id,
         bm.business_id,
         bm.role,
-        b.name as business_name
+        b.name as business_name,
+        b.allow_admin_create_staff
       from business_members bm
       join businesses b on b.id = bm.business_id
       where bm.user_id = $1 and bm.status = 'active'
@@ -468,56 +506,49 @@ const loadVisibleMembers = async (businessId, role) => {
         from business_members bm
         join businesses b on b.id = bm.business_id
         left join users u on u.id = bm.user_id
+        where bm.role = 'admin'
         order by
           case
             when bm.business_id = $1 then 0
             else 1
           end,
           b.name asc,
-          case bm.role
-            when 'super_admin' then 0
-            when 'owner' then 0
-            when 'admin' then 1
-            else 2
-          end,
           bm.created_at asc
       `,
       [businessId]
     );
   }
 
-  return query(
-    `
-      select
-        bm.id,
-        coalesce(u.email, bm.invitation_email) as email,
-        bm.role,
-        bm.status,
-        bm.created_at,
-        bm.business_id,
-        b.name as business_name
-      from business_members bm
-      join businesses b on b.id = bm.business_id
-      left join users u on u.id = bm.user_id
-      where bm.business_id = $1
-      order by
-        case bm.role
-          when 'super_admin' then 0
-          when 'owner' then 0
-          when 'admin' then 1
-          else 2
-        end,
-        bm.created_at asc
-    `,
-    [businessId]
-  );
+  if (normalizeBusinessRole(role) === "admin") {
+    return query(
+      `
+        select
+          bm.id,
+          coalesce(u.email, bm.invitation_email) as email,
+          bm.role,
+          bm.status,
+          bm.created_at,
+          bm.business_id,
+          b.name as business_name
+        from business_members bm
+        join businesses b on b.id = bm.business_id
+        left join users u on u.id = bm.user_id
+        where bm.business_id = $1
+          and bm.role = 'staff'
+        order by bm.created_at asc
+      `,
+      [businessId]
+    );
+  }
+
+  return { rows: [] };
 };
 
 const loadVisibleBusinesses = async (businessId, role) => {
   if (normalizeBusinessRole(role) === "super_admin") {
     return query(
       `
-        select id, name
+        select id, name, allow_admin_create_staff
         from businesses
         order by
           case
@@ -530,7 +561,7 @@ const loadVisibleBusinesses = async (businessId, role) => {
     );
   }
 
-  return query("select id, name from businesses where id = $1 limit 1", [businessId]);
+  return query("select id, name, allow_admin_create_staff from businesses where id = $1 limit 1", [businessId]);
 };
 
 const loadBootstrap = async (businessId, role) => {
@@ -619,6 +650,7 @@ app.use(
       businessId: membership?.business_id || null,
       businessName: membership?.business_name || null,
       role: membership?.role || null,
+      allowAdminCreateStaff: Boolean(membership?.allow_admin_create_staff),
       user: mapUser(sessionRow),
     };
 
@@ -754,7 +786,7 @@ app.post(
       }
 
       const session = await createSessionRecord(client, userId);
-      const businessResult = await client.query("select id, name from businesses where id = $1", [primaryBusinessId]);
+      const businessResult = await client.query("select id, name, allow_admin_create_staff from businesses where id = $1", [primaryBusinessId]);
 
       return {
         user: {
@@ -767,6 +799,7 @@ app.post(
           id: primaryBusinessId,
           name: businessResult.rows[0].name,
           role: primaryRole,
+          allowAdminCreateStaff: Boolean(businessResult.rows[0].allow_admin_create_staff),
         },
         session,
       };
@@ -833,6 +866,7 @@ app.post(
         id: membership.business_id,
         name: membership.business_name,
         role: membership.role,
+        allowAdminCreateStaff: Boolean(membership.allow_admin_create_staff),
       },
     });
   })
@@ -867,6 +901,7 @@ app.get(
         id: req.auth.businessId,
         name: req.auth.businessName,
         role: req.auth.role,
+        allowAdminCreateStaff: Boolean(req.auth.allowAdminCreateStaff),
       },
     });
   })
@@ -882,6 +917,7 @@ app.get(
         id: req.auth.businessId,
         name: req.auth.businessName,
         role: req.auth.role,
+        allowAdminCreateStaff: Boolean(req.auth.allowAdminCreateStaff),
       },
       user: req.auth.user,
       ...payload,
@@ -1222,9 +1258,9 @@ app.post(
             email: row.email,
             role: row.role,
             password: row.password,
+            requestedBusinessId: row.businessId,
             requestedBusinessName: row.businessName,
             fallbackBusinessId: defaultBusinessId || req.auth.businessId,
-            createBusinessOnRequestedName: true,
           })
         );
 
@@ -1303,6 +1339,10 @@ app.put(
         const error = new Error("Anda tidak memiliki izin untuk mengubah user ini.");
         error.status = 403;
         throw error;
+      }
+
+      if (role === "admin") {
+        await assertBusinessCanHaveAdmin(client, targetBusinessId, req.params.id);
       }
 
       let userId = member.user_id;
@@ -1418,6 +1458,35 @@ app.delete(
 
     await query("delete from business_members where id = $1 and business_id = $2", [req.params.id, targetBusinessId]);
     res.json({ ok: true });
+  })
+);
+
+app.put(
+  "/api/businesses/:id/staff-creation-access",
+  requireAuth,
+  requireRole("super_admin"),
+  asyncHandler(async (req, res) => {
+    if (typeof req.body.allowAdminCreateStaff !== "boolean") {
+      sendError(res, 400, "Nilai izin pembuatan staff tidak valid.");
+      return;
+    }
+
+    const result = await query(
+      `
+        update businesses
+        set allow_admin_create_staff = $2
+        where id = $1
+        returning id, name, allow_admin_create_staff
+      `,
+      [req.params.id, req.body.allowAdminCreateStaff]
+    );
+
+    if (result.rowCount === 0) {
+      sendError(res, 404, "Bisnis tidak ditemukan.");
+      return;
+    }
+
+    res.json(mapBusiness(result.rows[0]));
   })
 );
 

@@ -12,10 +12,12 @@ export default function AdminPanel() {
     businessId,
     businessName,
     businessRole,
+    businesses,
     appUsers,
     activities,
     menuVisibility,
     menuPackages,
+    updateBusinessStaffCreationAccess,
     updateMenuVisibility,
     createMenuPackage,
     updateMenuPackage,
@@ -32,16 +34,33 @@ export default function AdminPanel() {
   const [isSavingPackage, setIsSavingPackage] = useState(false);
   const [applyingPackageId, setApplyingPackageId] = useState<string | null>(null);
   const [deletingPackageId, setDeletingPackageId] = useState<string | null>(null);
+  const [savingStaffAccessBusinessId, setSavingStaffAccessBusinessId] = useState<string | null>(null);
 
   const activeMenuPackage = useMemo(() => menuPackages.find((menuPackage) => menuPackage.isActive) || null, [menuPackages]);
-  const totalVisibleBusinesses = useMemo(() => {
-    const ids = appUsers.map((user) => user.businessId || businessId || user.businessName || user.id);
-    return new Set(ids).size;
-  }, [appUsers, businessId]);
-
+  const totalBusinesses = businesses.length;
   const totalAdmins = appUsers.filter((user) => user.role === "admin").length;
-  const totalSuperAdmins = appUsers.filter((user) => user.role === "super_admin").length;
+  const totalStaff = appUsers.filter((user) => user.role === "staff").length;
+  const totalActiveUsers = appUsers.filter((user) => user.status !== "invited").length;
   const totalPendingUsers = appUsers.filter((user) => user.status === "invited").length;
+  const businessAdminMap = useMemo(() => {
+    const mapped = new Map<string, (typeof appUsers)[number]>();
+
+    for (const user of appUsers) {
+      if (user.role === "admin" && user.businessId && !mapped.has(user.businessId)) {
+        mapped.set(user.businessId, user);
+      }
+    }
+
+    return mapped;
+  }, [appUsers]);
+  const businessesWithoutAdmin = useMemo(
+    () => businesses.filter((business) => !businessAdminMap.has(business.id)).length,
+    [businessAdminMap, businesses]
+  );
+  const currentBusiness = useMemo(
+    () => businesses.find((business) => business.id === businessId) || null,
+    [businessId, businesses]
+  );
 
   const openCreatePackageForm = () => {
     setEditingPackageId(null);
@@ -136,6 +155,16 @@ export default function AdminPanel() {
     }
   };
 
+  const handleToggleStaffCreationAccess = async (targetBusinessId: string, allowAdminCreateStaff: boolean) => {
+    setSavingStaffAccessBusinessId(targetBusinessId);
+
+    try {
+      await updateBusinessStaffCreationAccess(targetBusinessId, allowAdminCreateStaff);
+    } finally {
+      setSavingStaffAccessBusinessId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -157,27 +186,29 @@ export default function AdminPanel() {
               <h2 className="text-lg font-bold text-slate-900">{businessRole === "super_admin" ? "Ringkasan Pengguna Lintas Bisnis" : "Ringkasan Pengguna"}</h2>
               <p className="mt-1 text-sm text-slate-500">
                 {businessRole === "super_admin"
-                  ? `Karena role Anda Super Admin, data pengguna dirangkum dari ${totalVisibleBusinesses} bisnis yang dapat Anda lihat.`
-                  : "Ringkasan ini hanya menampilkan user dalam bisnis aktif."}
+                  ? `Karena role Anda Super Admin, data ini hanya merangkum admin dari ${totalBusinesses} bisnis yang dapat Anda kelola.`
+                  : "Ringkasan ini hanya menampilkan staff pada bisnis aktif."}
               </p>
             </div>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
             <div className="rounded-xl bg-slate-50 p-4">
-              <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Total User</div>
-              <div className="mt-2 text-2xl font-bold text-slate-900">{appUsers.length}</div>
+              <div className="text-xs font-bold uppercase tracking-wide text-slate-400">{businessRole === "super_admin" ? "Total Bisnis" : "Total Staff"}</div>
+              <div className="mt-2 text-2xl font-bold text-slate-900">{businessRole === "super_admin" ? totalBusinesses : totalStaff}</div>
             </div>
             <div className="rounded-xl bg-indigo-50 p-4">
-              <div className="text-xs font-bold uppercase tracking-wide text-indigo-500">Super Admin</div>
-              <div className="mt-2 text-2xl font-bold text-indigo-700">{totalSuperAdmins}</div>
+              <div className="text-xs font-bold uppercase tracking-wide text-indigo-500">{businessRole === "super_admin" ? "Admin Bisnis" : "Staff Aktif"}</div>
+              <div className="mt-2 text-2xl font-bold text-indigo-700">{businessRole === "super_admin" ? totalAdmins : totalActiveUsers}</div>
             </div>
             <div className="rounded-xl bg-blue-50 p-4">
-              <div className="text-xs font-bold uppercase tracking-wide text-blue-500">Admin</div>
-              <div className="mt-2 text-2xl font-bold text-blue-700">{totalAdmins}</div>
+              <div className="text-xs font-bold uppercase tracking-wide text-blue-500">{businessRole === "super_admin" ? "Tanpa Admin" : "Bisa Tambah Staff"}</div>
+              <div className="mt-2 text-2xl font-bold text-blue-700">
+                {businessRole === "super_admin" ? businessesWithoutAdmin : currentBusiness?.allowAdminCreateStaff ? "Ya" : "Tidak"}
+              </div>
             </div>
             <div className="rounded-xl bg-amber-50 p-4">
-              <div className="text-xs font-bold uppercase tracking-wide text-amber-500">Pending</div>
+              <div className="text-xs font-bold uppercase tracking-wide text-amber-500">{businessRole === "super_admin" ? "Undangan Admin" : "Staff Pending"}</div>
               <div className="mt-2 text-2xl font-bold text-amber-700">{totalPendingUsers}</div>
             </div>
           </div>
@@ -205,6 +236,85 @@ export default function AdminPanel() {
           </div>
         </div>
       </div>
+
+      {businessRole === "super_admin" ? (
+        <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+          <div className="mb-6 flex items-start">
+            <div className="mr-3 rounded-lg bg-indigo-50 p-2 text-indigo-600">
+              <ShieldCheck className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Izin Pembuatan Staff per Bisnis</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Toggle ini mengatur apakah admin bisnis boleh membuat user staff. Edit dan hapus staff tetap mengikuti role admin di bisnisnya.
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-slate-100">
+            <table className="min-w-[760px] divide-y divide-slate-100">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Bisnis</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Admin Saat Ini</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Status Admin</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Boleh Buat Staff</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50 bg-white">
+                {businesses.map((business) => {
+                  const adminMember = businessAdminMap.get(business.id);
+                  const isSaving = savingStaffAccessBusinessId === business.id;
+
+                  return (
+                    <tr key={business.id}>
+                      <td className="px-4 py-3 text-sm font-medium text-slate-900">{business.name}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600">{adminMember?.email || "Belum ada admin"}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600">
+                        {adminMember ? (
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
+                              adminMember.status === "invited" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
+                            }`}
+                          >
+                            {adminMember.status === "invited" ? "Undangan" : "Aktif"}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">Belum ditetapkan</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="inline-flex items-center gap-3">
+                          <span className={`text-xs font-semibold ${business.allowAdminCreateStaff ? "text-emerald-700" : "text-slate-500"}`}>
+                            {business.allowAdminCreateStaff ? "Diizinkan" : "Tidak"}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={isSaving}
+                            onClick={() => void handleToggleStaffCreationAccess(business.id, !business.allowAdminCreateStaff)}
+                            className={`relative inline-flex h-7 w-14 shrink-0 items-center rounded-full transition-colors ${
+                              business.allowAdminCreateStaff ? "bg-emerald-500" : "bg-slate-300"
+                            } ${isSaving ? "cursor-not-allowed opacity-70" : ""}`}
+                            aria-label={`Toggle izin staff ${business.name}`}
+                          >
+                            <span
+                              className={`inline-flex h-6 w-6 items-center justify-center rounded-full bg-white shadow-sm transition-transform ${
+                                business.allowAdminCreateStaff ? "translate-x-7" : "translate-x-1"
+                              }`}
+                            >
+                              {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" /> : null}
+                            </span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
 
       <UserManagementSection />
 

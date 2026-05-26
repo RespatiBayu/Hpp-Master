@@ -59,6 +59,7 @@ interface AppState {
   bulkAddAppUsers: (rows: BulkUserUploadRow[], defaultBusinessId?: string) => Promise<BulkUserUploadResult>;
   updateAppUser: (id: string, role: BusinessRole, password?: string) => Promise<void>;
   deleteAppUser: (id: string) => Promise<void>;
+  updateBusinessStaffCreationAccess: (businessId: string, allowAdminCreateStaff: boolean) => Promise<void>;
   updateMenuVisibility: (menuKey: AppMenuKey, isEnabled: boolean) => Promise<void>;
   createMenuPackage: (payload: { name: string; description?: string; menuVisibility: MenuVisibility }) => Promise<void>;
   updateMenuPackage: (id: string, payload: { name: string; description?: string; menuVisibility: MenuVisibility }) => Promise<void>;
@@ -362,7 +363,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
         for (const member of result.created) {
           if (member.businessId && member.businessName && !seen.has(member.businessId)) {
-            next.push({ id: member.businessId, name: member.businessName });
+            next.push({ id: member.businessId, name: member.businessName, allowAdminCreateStaff: true });
             seen.add(member.businessId);
           }
         }
@@ -403,6 +404,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     await appApi.members.remove(id);
     setAppUsers((prev) => prev.filter((member) => member.id !== id));
     await logActivity("DELETE_USER", `Mencabut akses user: ${current.email}${current.businessName ? ` dari bisnis ${current.businessName}` : ""}`);
+  };
+
+  const updateBusinessStaffCreationAccess = async (targetBusinessId: string, allowAdminCreateStaff: boolean) => {
+    const currentBusiness = businesses.find((business) => business.id === targetBusinessId);
+    const updated = await appApi.business.updateStaffCreationAccess(targetBusinessId, allowAdminCreateStaff);
+
+    setBusinesses((prev) => prev.map((business) => (business.id === targetBusinessId ? updated : business)));
+
+    await logActivity(
+      "UPDATE_STAFF_CREATION_ACCESS",
+      `${allowAdminCreateStaff ? "Mengizinkan" : "Menonaktifkan izin"} admin bisnis ${updated.name || currentBusiness?.name || targetBusinessId} untuk membuat staff`
+    );
   };
 
   const updateMenuVisibility = async (menuKey: AppMenuKey, isEnabled: boolean) => {
@@ -487,6 +500,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         bulkAddAppUsers,
         updateAppUser,
         deleteAppUser,
+        updateBusinessStaffCreationAccess,
         updateMenuVisibility,
         createMenuPackage,
         updateMenuPackage,

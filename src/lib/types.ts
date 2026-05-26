@@ -100,6 +100,7 @@ export interface BulkUserUploadResult {
 export interface BusinessSummary {
   id: string;
   name: string;
+  allowAdminCreateStaff: boolean;
 }
 
 export interface UserActivity {

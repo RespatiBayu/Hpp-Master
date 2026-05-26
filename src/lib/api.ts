@@ -26,6 +26,7 @@ export interface BusinessContext {
   id: string;
   name: string;
   role: BusinessRole;
+  allowAdminCreateStaff: boolean;
 }
 
 export interface BootstrapPayload {
@@ -180,6 +181,11 @@ export const appApi = {
       }),
   },
   business: {
+    updateStaffCreationAccess: (businessId: string, allowAdminCreateStaff: boolean) =>
+      apiFetch<BusinessSummary>(`/api/businesses/${businessId}/staff-creation-access`, {
+        method: "PUT",
+        body: JSON.stringify({ allowAdminCreateStaff }),
+      }),
     updateMenuVisibility: (menuKey: AppMenuKey, isEnabled: boolean) =>
       apiFetch<{ menuVisibility: MenuVisibility; menuPackages: BusinessMenuPackage[] }>(`/api/business/menu-visibility/${menuKey}`, {
         method: "PUT",

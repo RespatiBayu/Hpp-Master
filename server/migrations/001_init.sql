@@ -2,6 +2,7 @@ create table if not exists businesses (
   id text primary key,
   name text not null,
   slug text not null unique,
+  allow_admin_create_staff boolean not null default true,
   created_at timestamptz not null default now()
 );
 
@@ -172,3 +173,6 @@ where role = 'owner';
 alter table business_members
 add constraint business_members_role_check
 check (role in ('super_admin', 'admin', 'staff'));
+
+alter table businesses
+add column if not exists allow_admin_create_staff boolean not null default true;

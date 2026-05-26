@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, FileDown, KeyRound, Loader2, Pencil, Plus, Trash2, Upload, Users } from "lucide-react";
 
-import { canManageMember, canManageUsers, getAssignableRoles, getRoleLabel } from "../lib/access";
+import { canCreateUsers, canManageMember, canManageUsers, getAssignableRoles, getManagedRoleForActor, getRoleLabel } from "../lib/access";
 import { parseBulkUserUploadFile } from "../lib/member-bulk-upload";
 import type { AppUser, BulkUserUploadResult, BulkUserUploadRow, BusinessRole } from "../lib/types";
 import { useAppContext } from "../store/AppContext";
@@ -12,18 +12,23 @@ const roleBadgeClass: Record<BusinessRole, string> = {
   staff: "bg-slate-100 text-slate-700",
 };
 
-const bulkUploadTemplateCsv = `email,role,password,business_name
-owner@alphakitchen.com,super_admin,rahasia123,Alpha Kitchen
-admin@alphakitchen.com,admin,admin123,Alpha Kitchen
-staff@betabites.com,staff,,Beta Bites`;
+const bulkUploadTemplateCsv = `email,password,business_name
+admin@alphakitchen.com,admin123,Alpha Kitchen
+admin@betabites.com,,Beta Bites`;
 
 export default function UserManagementSection() {
   const { businessId, businessName, businessRole, businesses, appUsers, addAppUser, bulkAddAppUsers, updateAppUser, deleteAppUser } = useAppContext();
 
   const canManageBusinessUsers = canManageUsers(businessRole);
   const isGlobalUserList = businessRole === "super_admin";
+  const managedRole = useMemo(() => getManagedRoleForActor(businessRole), [businessRole]);
   const assignableRoles = useMemo(() => getAssignableRoles(businessRole), [businessRole]);
   const defaultRole = assignableRoles[0] || "staff";
+  const currentBusiness = useMemo(
+    () => businesses.find((business) => business.id === businessId) || null,
+    [businessId, businesses]
+  );
+  const canCreateManagedUsers = canCreateUsers(businessRole, Boolean(currentBusiness?.allowAdminCreateStaff));
   const availableBusinesses = useMemo(() => {
     if (businesses.length > 0) return businesses;
     const mapped = new Map<string, string>();
@@ -38,7 +43,7 @@ export default function UserManagementSection() {
       mapped.set(businessId, businessName);
     }
 
-    return Array.from(mapped.entries()).map(([id, name]) => ({ id, name }));
+    return Array.from(mapped.entries()).map(([id, name]) => ({ id, name, allowAdminCreateStaff: true }));
   }, [appUsers, businessId, businessName, businesses]);
 
   const [isAddingUser, setIsAddingUser] = useState(false);
@@ -76,25 +81,48 @@ export default function UserManagementSection() {
     setBulkDefaultBusinessId((current) => (current && availableBusinesses.some((business) => business.id === current) ? current : preferredBusinessId));
   }, [availableBusinesses, businessId, isGlobalUserList]);
 
+  useEffect(() => {
+    if (!canCreateManagedUsers) {
+      setIsAddingUser(false);
+    }
+  }, [canCreateManagedUsers]);
+
   const previewBulkRows = bulkRows.slice(0, 5);
   const selectedBulkBusinessName =
     availableBusinesses.find((business) => business.id === bulkDefaultBusinessId)?.name || businessName || "bisnis default yang dipilih";
 
-  const getBulkRoleLabel = (role?: string, businessNameForRow?: string) => {
-    if (!role) return `${getRoleLabel(businessNameForRow ? "super_admin" : "staff")} (default)`;
-    if (role === "super_admin" || role === "admin" || role === "staff") {
+  const getBulkRoleLabel = (role?: string) => {
+    if (!role) return `${getRoleLabel("admin")} (default)`;
+    if (role === "admin") {
       return getRoleLabel(role);
     }
 
     return role;
   };
 
+  const getBusinessLabel = (businessIdForRow?: string, businessNameForRow?: string) => {
+    if (businessNameForRow) return businessNameForRow;
+    if (businessIdForRow) return availableBusinesses.find((business) => business.id === businessIdForRow)?.name || businessIdForRow;
+    return selectedBulkBusinessName;
+  };
+
+  const sectionTitle = isGlobalUserList ? "Manajemen Admin Bisnis" : "Manajemen Staff";
+  const sectionDescription = isGlobalUserList
+    ? "Super admin hanya bisa membuat, melihat, mengubah, dan menghapus admin untuk setiap bisnis."
+    : currentBusiness?.allowAdminCreateStaff
+      ? "Admin bisnis hanya bisa membuat, melihat, mengubah, dan menghapus staff untuk bisnis ini."
+      : "Pembuatan staff sedang dinonaktifkan oleh super admin. Anda masih bisa melihat, mengubah, dan menghapus staff bisnis ini.";
+  const addFormTitle = isGlobalUserList ? "Tambah Admin Bisnis" : "Tambah Staff Baru";
+  const addButtonLabel = isGlobalUserList ? "Tambah Admin" : "Tambah Staff";
+  const emptyStateLabel = isGlobalUserList ? "Belum ada admin bisnis terdaftar." : "Belum ada staff terdaftar.";
+  const editTitle = editingUser?.role === "admin" ? "Ubah Admin Bisnis" : "Ubah Staff";
+
   const handleAddUser = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!newEmail) return;
+    if (!newEmail || !managedRole || !canCreateManagedUsers) return;
     if (isGlobalUserList && !newBusinessId) return;
 
-    await addAppUser(newEmail, newRole, newPassword || undefined, isGlobalUserList ? newBusinessId : undefined);
+    await addAppUser(newEmail, managedRole, newPassword || undefined, isGlobalUserList ? newBusinessId : undefined);
     setNewEmail("");
     setNewRole(defaultRole);
     setNewBusinessId(businessId || availableBusinesses[0]?.id || "");
@@ -198,12 +226,8 @@ export default function UserManagementSection() {
               <Users className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">{isGlobalUserList ? "Manajemen User Lintas Bisnis" : "Manajemen User"}</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                {isGlobalUserList
-                  ? "Super admin sebagai pemilik platform bisa membuat, mengubah, dan menghapus user di semua bisnis."
-                  : "Super admin bisa mengelola admin dan staff. Admin hanya bisa mengelola staff."}
-              </p>
+              <h2 className="text-lg font-bold text-slate-900">{sectionTitle}</h2>
+              <p className="mt-1 text-sm text-slate-500">{sectionDescription}</p>
             </div>
           </div>
 
@@ -221,16 +245,22 @@ export default function UserManagementSection() {
                   <Upload className="mr-1 h-4 w-4" /> Bulk Upload
                 </button>
               ) : null}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsBulkUploadOpen(false);
-                  setIsAddingUser((current) => !current);
-                }}
-                className="inline-flex w-full items-center justify-center rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-600 transition-colors hover:bg-blue-100 sm:w-auto"
-              >
-                <Plus className="mr-1 h-4 w-4" /> Tambah User
-              </button>
+              {canCreateManagedUsers ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsBulkUploadOpen(false);
+                    setIsAddingUser((current) => !current);
+                  }}
+                  className="inline-flex w-full items-center justify-center rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-600 transition-colors hover:bg-blue-100 sm:w-auto"
+                >
+                  <Plus className="mr-1 h-4 w-4" /> {addButtonLabel}
+                </button>
+              ) : (
+                <div className="inline-flex items-center justify-center rounded-lg bg-amber-50 px-3 py-2 text-sm font-bold text-amber-700">
+                  Pembuatan staff dinonaktifkan
+                </div>
+              )}
             </div>
           ) : null}
         </div>
@@ -241,14 +271,14 @@ export default function UserManagementSection() {
           </div>
         )}
 
-        {isAddingUser && canManageBusinessUsers && (
+        {isAddingUser && canManageBusinessUsers && canCreateManagedUsers && (
           <form onSubmit={handleAddUser} className="mb-6 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
-            <h3 className="mb-3 text-sm font-bold text-slate-900">Tambah User Baru</h3>
+            <h3 className="mb-3 text-sm font-bold text-slate-900">{addFormTitle}</h3>
             <div
               className={`grid grid-cols-1 gap-3 ${
                 isGlobalUserList
                   ? "md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1fr)_auto]"
-                  : "md:grid-cols-[minmax(0,1.7fr)_minmax(0,0.8fr)_minmax(0,1fr)_auto]"
+                  : "md:grid-cols-[minmax(0,1.5fr)_minmax(0,0.8fr)_minmax(0,1fr)_auto]"
               }`}
             >
               <input
@@ -259,17 +289,9 @@ export default function UserManagementSection() {
                 placeholder="Alamat Email User"
                 className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
-              <select
-                value={newRole}
-                onChange={(event) => setNewRole(event.target.value as BusinessRole)}
-                className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              >
-                {assignableRoles.map((role) => (
-                  <option key={role} value={role}>
-                    {getRoleLabel(role)}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700">
+                {getRoleLabel(managedRole)}
+              </div>
               {isGlobalUserList ? (
                 <select
                   required
@@ -302,9 +324,9 @@ export default function UserManagementSection() {
             <p className="mt-2 text-xs leading-relaxed text-slate-500">
               Isi password jika akun ingin langsung aktif. Jika dikosongkan, user akan tersimpan sebagai undangan dan bisa diaktifkan nanti dari panel ini.
               {isGlobalUserList
-                ? ` User baru akan ditambahkan ke bisnis ${availableBusinesses.find((business) => business.id === newBusinessId)?.name || "yang dipilih"}.`
+                ? ` Admin baru akan ditambahkan ke bisnis ${availableBusinesses.find((business) => business.id === newBusinessId)?.name || "yang dipilih"}. Setiap bisnis hanya bisa memiliki 1 admin.`
                 : businessName
-                  ? ` User baru akan ditambahkan ke bisnis aktif: ${businessName}.`
+                  ? ` Staff baru akan ditambahkan ke bisnis aktif: ${businessName}.`
                   : ""}
             </p>
           </form>
@@ -314,12 +336,12 @@ export default function UserManagementSection() {
           <form onSubmit={handleBulkUpload} className="mb-6 rounded-xl border border-emerald-100 bg-emerald-50/60 p-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <h3 className="text-sm font-bold text-slate-900">Bulk Upload User Super Admin</h3>
+                <h3 className="text-sm font-bold text-slate-900">Bulk Upload Admin Bisnis</h3>
                 <p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-600">
-                  Upload file CSV atau TSV untuk membuat banyak user sekaligus. Kolom wajib hanya <strong>email</strong>. Kolom
-                  <strong> role</strong>, <strong>password</strong>, dan <strong>business_name</strong> bersifat opsional. Jika
-                  <strong> business_name</strong> diisi, sistem akan otomatis membuat bisnis baru untuk user tersebut. Jika kosong, sistem
-                  memakai bisnis default yang Anda pilih di bawah.
+                  Upload file CSV atau TSV untuk membuat banyak admin bisnis sekaligus. Kolom wajib hanya <strong>email</strong>. Kolom
+                  <strong> password</strong>, <strong>business_name</strong>, dan <strong>business_id</strong> bersifat opsional. Jika kolom
+                  bisnis dikosongkan, sistem memakai bisnis default yang Anda pilih di bawah. Kolom <strong>role</strong> tetap didukung, tetapi
+                  hanya menerima nilai <strong>admin</strong>.
                 </p>
               </div>
               <button
@@ -376,7 +398,7 @@ export default function UserManagementSection() {
 
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-slate-600">
-                Role kosong: {getRoleLabel("super_admin")} untuk bisnis baru, selain itu {getRoleLabel("staff")}
+                Role kosong: {getRoleLabel("admin")}
               </span>
               <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-slate-600">
                 Password kosong akan membuat undangan user
@@ -384,6 +406,7 @@ export default function UserManagementSection() {
               <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-slate-600">
                 Bisnis default: {selectedBulkBusinessName}
               </span>
+              <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-slate-600">1 bisnis hanya 1 admin</span>
             </div>
 
             {bulkFileName ? (
@@ -436,14 +459,12 @@ export default function UserManagementSection() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
-                      {previewBulkRows.map((row) => (
+                  {previewBulkRows.map((row) => (
                         <tr key={`${row.rowNumber}-${row.email}`}>
                           <td className="px-3 py-2 text-sm text-slate-500">{row.rowNumber}</td>
                           <td className="px-3 py-2 text-sm font-medium text-slate-900">{row.email || "-"}</td>
-                          <td className="px-3 py-2 text-sm text-slate-500">{getBulkRoleLabel(row.role, row.businessName)}</td>
-                          <td className="px-3 py-2 text-sm text-slate-500">
-                            {row.businessName ? `Bisnis baru: ${row.businessName}` : selectedBulkBusinessName}
-                          </td>
+                          <td className="px-3 py-2 text-sm text-slate-500">{getBulkRoleLabel(row.role)}</td>
+                          <td className="px-3 py-2 text-sm text-slate-500">{getBusinessLabel(row.businessId, row.businessName)}</td>
                           <td className="px-3 py-2 text-sm text-slate-500">{row.password ? "Aktif" : "Undangan"}</td>
                         </tr>
                       ))}
@@ -488,9 +509,7 @@ export default function UserManagementSection() {
                           <tr key={`${error.rowNumber}-${error.email}-${error.message}`}>
                             <td className="px-3 py-2 text-sm text-slate-600">{error.rowNumber}</td>
                             <td className="px-3 py-2 text-sm font-medium text-slate-900">{error.email || "-"}</td>
-                            <td className="px-3 py-2 text-sm text-slate-600">
-                              {error.businessName ? `Bisnis baru: ${error.businessName}` : selectedBulkBusinessName}
-                            </td>
+                            <td className="px-3 py-2 text-sm text-slate-600">{getBusinessLabel(error.businessId, error.businessName)}</td>
                             <td className="px-3 py-2 text-sm text-red-600">{error.message}</td>
                           </tr>
                         ))}
@@ -521,7 +540,7 @@ export default function UserManagementSection() {
               {appUsers.length === 0 ? (
                 <tr>
                   <td colSpan={isGlobalUserList ? 6 : 5} className="px-4 py-8 text-center text-sm text-slate-500">
-                    Belum ada user terdaftar.
+                    {emptyStateLabel}
                   </td>
                 </tr>
               ) : (
@@ -595,9 +614,9 @@ export default function UserManagementSection() {
       {editingUser && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-            <h3 className="mb-2 text-lg font-bold text-slate-900">Ubah User</h3>
+            <h3 className="mb-2 text-lg font-bold text-slate-900">{editTitle}</h3>
             <p className="mb-6 text-sm text-slate-600">
-              Perbarui role atau password untuk <strong>{editingUser.email}</strong>.
+              Perbarui password atau aktivasi akun untuk <strong>{editingUser.email}</strong>.
             </p>
 
             <form onSubmit={handleUpdateUser} className="space-y-4">
@@ -611,17 +630,9 @@ export default function UserManagementSection() {
               ) : null}
               <div>
                 <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Role</label>
-                <select
-                  value={editRole}
-                  onChange={(event) => setEditRole(event.target.value as BusinessRole)}
-                  className="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                >
-                  {assignableRoles.map((role) => (
-                    <option key={role} value={role}>
-                      {getRoleLabel(role)}
-                    </option>
-                  ))}
-                </select>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium text-slate-700">
+                  {getRoleLabel(editRole)}
+                </div>
               </div>
 
               <div>
@@ -640,7 +651,7 @@ export default function UserManagementSection() {
                 <p className="mt-2 text-xs text-slate-500">
                   {editingUser.status === "invited"
                     ? "Mengisi password akan langsung mengaktifkan akun undangan ini."
-                    : "Kosongkan bila Anda hanya ingin mengganti role tanpa reset password."}
+                    : "Kosongkan bila Anda tidak ingin mengganti password."}
                 </p>
               </div>
 
