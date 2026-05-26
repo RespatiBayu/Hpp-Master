@@ -11,7 +11,7 @@ export const canManageUsers = (role: BusinessRole | null) => role === "super_adm
 export const canCreateUsers = (role: BusinessRole | null, allowAdminCreateStaff: boolean) =>
   role === "super_admin" || (role === "admin" && allowAdminCreateStaff);
 
-export const canManageMenus = (role: BusinessRole | null) => role === "super_admin";
+export const canManageMenus = (role: BusinessRole | null) => role === "super_admin" || role === "admin";
 
 export const getAssignableRoles = (role: BusinessRole | null): BusinessRole[] => {
   if (role === "super_admin") return ["admin"];

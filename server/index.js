@@ -1513,7 +1513,7 @@ app.put(
 app.post(
   "/api/business/menu-packages",
   requireAuth,
-  requireRole("super_admin"),
+  requireRole("super_admin", "admin"),
   asyncHandler(async (req, res) => {
     const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
     const description =
@@ -1544,7 +1544,7 @@ app.post(
 app.put(
   "/api/business/menu-packages/:id",
   requireAuth,
-  requireRole("super_admin"),
+  requireRole("super_admin", "admin"),
   asyncHandler(async (req, res) => {
     const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
     const description =
@@ -1596,7 +1596,7 @@ app.put(
 app.delete(
   "/api/business/menu-packages/:id",
   requireAuth,
-  requireRole("super_admin"),
+  requireRole("super_admin", "admin"),
   asyncHandler(async (req, res) => {
     const response = await withTransaction(async (client) => {
       const packageResult = await client.query(
@@ -1626,7 +1626,7 @@ app.delete(
 app.post(
   "/api/business/menu-packages/:id/apply",
   requireAuth,
-  requireRole("super_admin"),
+  requireRole("super_admin", "admin"),
   asyncHandler(async (req, res) => {
     const response = await withTransaction(async (client) => {
       const packageResult = await client.query(
@@ -1668,7 +1668,7 @@ app.post(
 app.put(
   "/api/business/menu-visibility/:menuKey",
   requireAuth,
-  requireRole("super_admin"),
+  requireRole("super_admin", "admin"),
   asyncHandler(async (req, res) => {
     const menuKey = req.params.menuKey;
     const isEnabled = req.body.isEnabled;

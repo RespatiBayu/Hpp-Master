@@ -327,7 +327,7 @@ export default function AdminPanel() {
             <div>
               <h2 className="text-lg font-bold text-slate-900">Paket Menu</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Super admin bisa membuat paket akses menu agar bisnis tidak perlu dibuka-tutup satu per satu.
+                Admin bisnis dan super admin bisa membuat paket akses menu untuk bisnis aktif agar staff mengikuti pengaturan yang sama.
               </p>
             </div>
           </div>
@@ -342,7 +342,7 @@ export default function AdminPanel() {
           ) : (
             <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-500">
               <ShieldCheck className="h-4 w-4" />
-              Hanya super admin
+              Hanya admin bisnis atau super admin
             </div>
           )}
         </div>
@@ -541,13 +541,15 @@ export default function AdminPanel() {
             </div>
             <div>
               <h2 className="text-lg font-bold text-slate-900">Override Per Menu</h2>
-              <p className="mt-1 text-sm text-slate-500">Gunakan hanya jika Anda perlu penyesuaian akses di luar paket menu yang tersedia.</p>
+              <p className="mt-1 text-sm text-slate-500">
+                Gunakan untuk menampilkan atau menyembunyikan menu staff pada bisnis aktif di luar paket menu yang tersedia.
+              </p>
             </div>
           </div>
           {!canManageMenus(businessRole) && (
             <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-500">
               <ShieldCheck className="h-4 w-4" />
-              Hanya super admin
+              Hanya admin bisnis atau super admin
             </div>
           )}
         </div>
