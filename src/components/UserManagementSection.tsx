@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, FileDown, KeyRound, Loader2, Pencil, Plus, Trash2, Upload, Users } from "lucide-react";
 
+import { coerceAssistantText, subscribeAssistantPrefill } from "../lib/assistant";
 import { canCreateUsers, canManageMember, canManageUsers, getAssignableRoles, getManagedRoleForActor, getRoleLabel } from "../lib/access";
 import { parseBulkUserUploadFile } from "../lib/member-bulk-upload";
 import type { AppUser, BulkUserUploadResult, BulkUserUploadRow, BusinessRole } from "../lib/types";
@@ -110,6 +111,61 @@ export default function UserManagementSection() {
       setAddUserError(null);
     }
   }, [canCreateManagedUsers]);
+
+  useEffect(() => {
+    return subscribeAssistantPrefill((payload) => {
+      if (payload.targetMenu !== "admin" || payload.formId !== "member_create") return;
+
+      if (!canManageBusinessUsers || !canCreateManagedUsers) {
+        payload.respond({
+          appliedFields: [],
+          missingFields: [],
+          note: "Role Anda belum diizinkan membuat user baru dari panel admin.",
+        });
+        return;
+      }
+
+      const nextEmail = coerceAssistantText(payload.fields.email);
+      const nextPassword = coerceAssistantText(payload.fields.password);
+      const requestedBusinessId = coerceAssistantText(payload.fields.businessId);
+      const nextBusinessName = coerceAssistantText(payload.fields.businessName);
+      const wantsNewBusiness = payload.fields.createBusinessOnRequestedName === true;
+      const validBusinessId = availableBusinesses.some((business) => business.id === requestedBusinessId) ? requestedBusinessId : "";
+      const appliedFields: string[] = [];
+
+      setIsAddingUser(true);
+      setAddUserError(null);
+      setNewEmail(nextEmail);
+      setNewPassword(nextPassword);
+
+      if (nextEmail.trim()) appliedFields.push("email");
+      if (nextPassword.trim()) appliedFields.push("password");
+
+      if (isGlobalUserList) {
+        if (wantsNewBusiness) {
+          setNewBusinessId(CREATE_NEW_BUSINESS_OPTION);
+          setNewBusinessNameInput(nextBusinessName);
+          if (nextBusinessName.trim()) appliedFields.push("businessName");
+        } else {
+          setNewBusinessId(validBusinessId || businessId || availableBusinesses[0]?.id || "");
+          setNewBusinessNameInput("");
+          if (validBusinessId) appliedFields.push("businessId");
+        }
+      } else {
+        setNewBusinessId(businessId || "");
+        setNewBusinessNameInput("");
+      }
+
+      payload.respond({
+        appliedFields,
+        missingFields: [],
+        note:
+          appliedFields.length > 0
+            ? "Form tambah user sudah dibuka dan data yang jelas sudah diisi."
+            : "Form tambah user sudah dibuka, tetapi email atau bisnis target masih belum cukup jelas.",
+      });
+    });
+  }, [availableBusinesses, businessId, canCreateManagedUsers, canManageBusinessUsers, isGlobalUserList]);
 
   const previewBulkRows = bulkRows.slice(0, 5);
   const isCreatingNewBusiness = isGlobalUserList && newBusinessId === CREATE_NEW_BUSINESS_OPTION;

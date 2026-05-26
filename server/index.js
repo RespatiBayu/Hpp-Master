@@ -3,6 +3,7 @@ import path from "node:path";
 
 import express from "express";
 
+import { planAssistantInput } from "./assistant.js";
 import { config } from "./config.js";
 import { pool, query, runMigrations, withTransaction } from "./db.js";
 import { businessMenuDefinitions, isBusinessMenuKey, mergeMenuVisibility, normalizeMenuVisibility } from "./menu-config.js";
@@ -1870,6 +1871,31 @@ app.put(
       menuVisibility: menuState.menuVisibility,
       menuPackages: menuState.menuPackages,
     });
+  })
+);
+
+app.post(
+  "/api/assistant/input-plan",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const userMessage = typeof req.body.userMessage === "string" ? req.body.userMessage.trim() : "";
+    const context = req.body.context && typeof req.body.context === "object" ? req.body.context : {};
+
+    if (!userMessage) {
+      sendError(res, 400, "Instruksi assistant wajib diisi.");
+      return;
+    }
+
+    const plan = await planAssistantInput({
+      apiKey: config.falKey,
+      userMessage,
+      context: {
+        ...context,
+        businessRole: req.auth.role,
+      },
+    });
+
+    res.json(plan);
   })
 );
 

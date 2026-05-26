@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronUp, LayoutDashboard, type LucideIcon, UserCircle, Settings, LogOut, Loader2, Package, ShoppingCart, Activity, FilePlus, Receipt, Calculator, Menu, PanelLeftClose, PanelLeftOpen, Store, X } from "lucide-react";
 
+import FloatingAssistant from "./components/FloatingAssistant";
+import { isAssistantSupportedMenu, type AssistantMenuTarget } from "./lib/assistant";
 import { getRoleLabel } from "./lib/access";
 import { businessMenuDefinitions } from "./lib/menu-config";
 import type { AppMenuKey } from "./lib/types";
@@ -16,9 +18,11 @@ import AdminPanel from "./views/AdminPanel";
 import LoginView from "./views/LoginView";
 import BusinessCalculatorView from "./views/BusinessCalculatorView";
 
+type MainTabKey = AppMenuKey | "admin";
+
 export default function MainApp() {
   const { user, businessName, businessRole, menuVisibility, needsAuth, isLoading, logout } = useAppContext();
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const [activeTab, setActiveTab] = useState<MainTabKey>("dashboard");
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isAccountPanelOpen, setIsAccountPanelOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
@@ -39,7 +43,7 @@ export default function MainApp() {
   } as const;
 
   const tabs = useMemo(() => {
-    const businessTabs: Array<{ id: string; label: string; icon: LucideIcon }> = businessMenuDefinitions
+    const businessTabs: Array<{ id: MainTabKey; label: string; icon: LucideIcon }> = businessMenuDefinitions
       .filter((menu) => menuVisibility[menu.id])
       .map((menu) => ({
         id: menu.id,
@@ -58,6 +62,13 @@ export default function MainApp() {
   const activeTabMeta = useMemo(
     () => tabs.find((tab) => tab.id === activeTab) || tabs[0] || null,
     [activeTab, tabs]
+  );
+  const assistantVisibleMenus = useMemo(
+    () =>
+      tabs
+        .filter((tab) => isAssistantSupportedMenu(tab.id))
+        .map((tab) => ({ id: tab.id as AssistantMenuTarget, label: tab.label })),
+    [tabs]
   );
 
   useEffect(() => {
@@ -344,6 +355,13 @@ export default function MainApp() {
           </div>
         </div>
       </main>
+
+      <FloatingAssistant
+        activeMenu={activeTab}
+        activeMenuLabel={activeTabMeta?.label || "Halaman"}
+        visibleMenus={assistantVisibleMenus}
+        onNavigate={(menu) => setActiveTab(menu)}
+      />
     </div>
   );
 }

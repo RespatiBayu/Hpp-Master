@@ -14,6 +14,7 @@ export const config = {
   port: toNumber(process.env.PORT, 4000),
   appUrl: process.env.APP_URL || "http://localhost:3000",
   databaseUrl: process.env.DATABASE_URL || "",
+  falKey: process.env.FAL_KEY || "",
   sessionCookieName: process.env.SESSION_COOKIE_NAME || "hpp_session",
   sessionTtlDays: toNumber(process.env.SESSION_TTL_DAYS, 14),
   autoMigrate: process.env.AUTO_MIGRATE !== "false",

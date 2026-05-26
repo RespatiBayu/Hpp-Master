@@ -1,3 +1,4 @@
+import type { AssistantPlan, AssistantRequestContext } from "./assistant";
 import type {
   AppMenuKey,
   AppUser,
@@ -240,6 +241,13 @@ export const appApi = {
       apiFetch<UserActivity>("/api/activity", {
         method: "POST",
         body: JSON.stringify({ action, details }),
+      }),
+  },
+  assistant: {
+    planInput: (userMessage: string, context: AssistantRequestContext) =>
+      apiFetch<AssistantPlan>("/api/assistant/input-plan", {
+        method: "POST",
+        body: JSON.stringify({ userMessage, context }),
       }),
   },
 };

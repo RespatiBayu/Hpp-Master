@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Plus, Edit2, Trash2 } from "lucide-react";
 
+import { coerceAssistantDate, coerceAssistantNumber, coerceAssistantText, subscribeAssistantPrefill } from "../lib/assistant";
 import { getTodayDateValue } from "../lib/date";
 import { Expense } from "../lib/types";
 import { useAppContext } from "../store/AppContext";
@@ -47,6 +48,35 @@ export default function ExpensesView() {
       setExpenseToDelete(null);
     }
   };
+
+  useEffect(() => {
+    return subscribeAssistantPrefill((payload) => {
+      if (payload.targetMenu !== "expenses" || payload.formId !== "expense_create") return;
+
+      const nextDate = coerceAssistantDate(payload.fields.date, getTodayDateValue());
+      const nextDescription = coerceAssistantText(payload.fields.description);
+      const nextAmount = coerceAssistantNumber(payload.fields.amount);
+      const appliedFields: string[] = [];
+
+      if (nextDate) appliedFields.push("date");
+      if (nextDescription.trim()) appliedFields.push("description");
+      if (nextAmount !== null) appliedFields.push("amount");
+
+      setIsAdding(true);
+      setDate(nextDate);
+      setDescription(nextDescription);
+      setAmount(nextAmount !== null ? String(nextAmount) : "");
+
+      payload.respond({
+        appliedFields,
+        missingFields: [],
+        note:
+          appliedFields.length > 0
+            ? "Form beban sudah dibuka dan detail utama sudah diisi."
+            : "Form beban sudah dibuka, tetapi deskripsi atau nominalnya belum cukup jelas.",
+      });
+    });
+  }, []);
 
   return (
     <div className="space-y-6">

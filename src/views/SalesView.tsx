@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Plus, Edit2, Trash2 } from "lucide-react";
 
+import { coerceAssistantDate, coerceAssistantNumber, coerceAssistantText, subscribeAssistantPrefill } from "../lib/assistant";
 import { getTodayDateValue } from "../lib/date";
 import { Sale } from "../lib/types";
 import { useAppContext } from "../store/AppContext";
@@ -91,6 +92,39 @@ export default function SalesView() {
       setSaleToDelete(null);
     }
   };
+
+  useEffect(() => {
+    return subscribeAssistantPrefill((payload) => {
+      if (payload.targetMenu !== "sales" || payload.formId !== "sale_create") return;
+
+      const requestedItemId = coerceAssistantText(payload.fields.itemId);
+      const nextItemId = finishedItems.some((item) => item.id === requestedItemId) ? requestedItemId : "";
+      const nextDate = coerceAssistantDate(payload.fields.date, getTodayDateValue());
+      const nextQty = coerceAssistantNumber(payload.fields.qty);
+      const nextTotalRevenue = coerceAssistantNumber(payload.fields.totalRevenue);
+      const appliedFields: string[] = [];
+
+      if (nextDate) appliedFields.push("date");
+      if (nextItemId) appliedFields.push("itemId");
+      if (nextQty !== null) appliedFields.push("qty");
+      if (nextTotalRevenue !== null) appliedFields.push("totalRevenue");
+
+      setIsAdding(true);
+      setDate(nextDate);
+      setItemId(nextItemId);
+      setQty(nextQty !== null ? String(nextQty) : "");
+      setTotalRevenue(nextTotalRevenue !== null ? String(nextTotalRevenue) : "");
+
+      payload.respond({
+        appliedFields,
+        missingFields: [],
+        note:
+          appliedFields.length > 0
+            ? "Form penjualan sudah dibuka dan draft field yang cocok sudah terisi."
+            : "Form penjualan sudah dibuka, tetapi produk atau total penjualannya belum cukup jelas.",
+      });
+    });
+  }, [finishedItems]);
 
   return (
     <div className="space-y-6">

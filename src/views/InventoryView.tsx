@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Edit2, Plus, Search, Tags, Trash2 } from "lucide-react";
 
+import { coerceAssistantNumber, coerceAssistantText, subscribeAssistantPrefill } from "../lib/assistant";
 import { calculateItemStats } from "../lib/calculators";
 import { getItemTypeLabel } from "../lib/items";
 import { type Item, type ItemType } from "../lib/types";
@@ -93,6 +94,46 @@ export default function InventoryView() {
 
     setEditingItem(null);
   };
+
+  useEffect(() => {
+    return subscribeAssistantPrefill((payload) => {
+      if (payload.targetMenu !== "inventory" || payload.formId !== "inventory_item_create") return;
+
+      const nextName = coerceAssistantText(payload.fields.name);
+      const nextCategory = coerceAssistantText(payload.fields.category, "Umum");
+      const requestedType = coerceAssistantText(payload.fields.type, "RAW");
+      const nextType: ItemType =
+        requestedType === "HALF_FINISHED" || requestedType === "FINISHED" || requestedType === "RAW" ? requestedType : "RAW";
+      const nextUnit = coerceAssistantText(payload.fields.unit, "pcs");
+      const nextMinQty = coerceAssistantNumber(payload.fields.minQty);
+      const nextSellingPrice = coerceAssistantNumber(payload.fields.sellingPrice);
+      const appliedFields: string[] = [];
+
+      if (nextName.trim()) appliedFields.push("name");
+      if (nextCategory.trim()) appliedFields.push("category");
+      if (nextUnit.trim()) appliedFields.push("unit");
+      if (nextMinQty !== null) appliedFields.push("minQty");
+      if (requestedType) appliedFields.push("type");
+      if (nextType === "FINISHED" && nextSellingPrice !== null) appliedFields.push("sellingPrice");
+
+      setIsAdding(true);
+      setName(nextName);
+      setCategory(nextCategory);
+      setType(nextType);
+      setUnit(nextUnit);
+      setMinQty(nextMinQty !== null ? String(nextMinQty) : "");
+      setSellingPrice(nextType === "FINISHED" && nextSellingPrice !== null ? String(nextSellingPrice) : "");
+
+      payload.respond({
+        appliedFields,
+        missingFields: [],
+        note:
+          appliedFields.length > 0
+            ? "Form barang baru sudah dibuka dan draft field yang jelas sudah diisi."
+            : "Form barang baru sudah dibuka, tetapi detail input masih terlalu umum.",
+      });
+    });
+  }, []);
 
   return (
     <div className="space-y-6">

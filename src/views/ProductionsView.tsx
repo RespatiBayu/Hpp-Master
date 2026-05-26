@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
 
+import { coerceAssistantDate, coerceAssistantNumber, coerceAssistantText, subscribeAssistantPrefill } from "../lib/assistant";
 import { calculateItemStats } from "../lib/calculators";
 import { getTodayDateValue } from "../lib/date";
 import { RawMaterialUsage } from "../lib/types";
@@ -64,6 +65,51 @@ export default function ProductionsView() {
     setIsAdding(false);
     setFinishedItemId(""); setFinishedQty(""); setOverheadCost(""); setRawUsage([]);
   };
+
+  useEffect(() => {
+    return subscribeAssistantPrefill((payload) => {
+      if (payload.targetMenu !== "productions" || payload.formId !== "production_create") return;
+
+      const requestedFinishedItemId = coerceAssistantText(payload.fields.finishedItemId);
+      const nextFinishedItemId = finishedItems.some((item) => item.id === requestedFinishedItemId) ? requestedFinishedItemId : "";
+      const nextDate = coerceAssistantDate(payload.fields.date, getTodayDateValue());
+      const nextFinishedQty = coerceAssistantNumber(payload.fields.finishedQty);
+      const nextOverheadCost = coerceAssistantNumber(payload.fields.overheadCost);
+      const nextRawMaterials = Array.isArray(payload.fields.rawMaterials)
+        ? payload.fields.rawMaterials
+            .map((entry) => {
+              const id = coerceAssistantText(entry && typeof entry === "object" ? (entry as { id?: unknown }).id : "");
+              const qty = coerceAssistantNumber(entry && typeof entry === "object" ? (entry as { qty?: unknown }).qty : null);
+              if (!id || qty === null || !rawItems.some((item) => item.id === id)) return null;
+              return { id, qty };
+            })
+            .filter((entry): entry is RawMaterialUsage => Boolean(entry))
+        : [];
+      const appliedFields: string[] = [];
+
+      if (nextDate) appliedFields.push("date");
+      if (nextFinishedItemId) appliedFields.push("finishedItemId");
+      if (nextFinishedQty !== null) appliedFields.push("finishedQty");
+      if (nextOverheadCost !== null) appliedFields.push("overheadCost");
+      if (nextRawMaterials.length > 0) appliedFields.push("rawMaterials");
+
+      setIsAdding(true);
+      setDate(nextDate);
+      setFinishedItemId(nextFinishedItemId);
+      setFinishedQty(nextFinishedQty !== null ? String(nextFinishedQty) : "");
+      setOverheadCost(nextOverheadCost !== null ? String(nextOverheadCost) : "");
+      setRawUsage(nextRawMaterials);
+
+      payload.respond({
+        appliedFields,
+        missingFields: [],
+        note:
+          appliedFields.length > 0
+            ? "Form produksi sudah dibuka dan draft bahan/qty yang jelas sudah diisi."
+            : "Form produksi sudah dibuka, tetapi produk hasil atau bahan bakunya belum cukup jelas.",
+      });
+    });
+  }, [finishedItems, rawItems]);
 
   return (
     <div className="space-y-6">
