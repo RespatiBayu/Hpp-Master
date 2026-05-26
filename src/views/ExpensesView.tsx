@@ -1,13 +1,15 @@
 import React, { useState } from "react";
-import { useAppContext } from "../store/AppContext";
 import { Plus, Edit2, Trash2 } from "lucide-react";
+
+import { getTodayDateValue } from "../lib/date";
 import { Expense } from "../lib/types";
+import { useAppContext } from "../store/AppContext";
 
 export default function ExpensesView() {
   const { expenses, addExpense, editExpense, deleteExpense } = useAppContext();
 
   const [isAdding, setIsAdding] = useState(false);
-  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(getTodayDateValue);
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
 

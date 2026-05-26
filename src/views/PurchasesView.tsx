@@ -1,14 +1,16 @@
 import React, { useState } from "react";
-import { useAppContext } from "../store/AppContext";
 import { Plus, Edit2, Trash2 } from "lucide-react";
+
+import { getTodayDateValue } from "../lib/date";
 import { Purchase } from "../lib/types";
+import { useAppContext } from "../store/AppContext";
 
 export default function PurchasesView() {
   const { items, purchases, addPurchase, editPurchase, deletePurchase } = useAppContext();
   const rawItems = items.filter(i => i.type === "RAW" || i.type === "HALF_FINISHED");
 
   const [isAdding, setIsAdding] = useState(false);
-  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(getTodayDateValue);
   const [itemId, setItemId] = useState("");
   const [qty, setQty] = useState("");
   const [totalCost, setTotalCost] = useState("");

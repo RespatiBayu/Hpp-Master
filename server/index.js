@@ -59,6 +59,7 @@ const mapUser = (row) => ({
 const mapItem = (row) => ({
   id: row.id,
   name: row.name,
+  category: row.category || "Umum",
   type: row.type,
   unit: row.unit,
   minQty: Number(row.min_qty),
@@ -140,6 +141,7 @@ const mapMenuPackage = (row) => ({
 });
 
 const buildDisplayNameFromEmail = (email) => email.split("@")[0] || "User";
+const normalizeItemCategory = (value) => (typeof value === "string" && value.trim() ? value.trim() : "Umum");
 
 const createHttpError = (status, message) => {
   const error = new Error(message);
@@ -421,6 +423,56 @@ const loadBusinessMenuState = async (clientOrPool, businessId) => {
     menuVisibility: mergeMenuVisibility(menuSettingsResult.rows),
     menuPackages: menuPackagesResult.rows.map(mapMenuPackage),
   };
+};
+
+const loadAvailableStockByItemIds = async (client, businessId, itemIds) => {
+  if (itemIds.length === 0) return {};
+
+  const [purchasesResult, productionsResult, salesResult] = await Promise.all([
+    client.query(
+      `
+        select item_id, coalesce(sum(qty), 0) as qty
+        from purchases
+        where business_id = $1 and item_id = any($2::text[])
+        group by item_id
+      `,
+      [businessId, itemIds]
+    ),
+    client.query(
+      `
+        select finished_item_id as item_id, coalesce(sum(finished_qty), 0) as qty
+        from productions
+        where business_id = $1 and finished_item_id = any($2::text[])
+        group by finished_item_id
+      `,
+      [businessId, itemIds]
+    ),
+    client.query(
+      `
+        select item_id, coalesce(sum(qty), 0) as qty
+        from sales
+        where business_id = $1 and item_id = any($2::text[])
+        group by item_id
+      `,
+      [businessId, itemIds]
+    ),
+  ]);
+
+  const stockByItemId = Object.fromEntries(itemIds.map((itemId) => [itemId, 0]));
+
+  for (const row of purchasesResult.rows) {
+    stockByItemId[row.item_id] = (stockByItemId[row.item_id] || 0) + Number(row.qty);
+  }
+
+  for (const row of productionsResult.rows) {
+    stockByItemId[row.item_id] = (stockByItemId[row.item_id] || 0) + Number(row.qty);
+  }
+
+  for (const row of salesResult.rows) {
+    stockByItemId[row.item_id] = (stockByItemId[row.item_id] || 0) - Number(row.qty);
+  }
+
+  return stockByItemId;
 };
 
 const createSessionRecord = async (client, userId) => {
@@ -936,13 +988,14 @@ app.post(
   asyncHandler(async (req, res) => {
     const id = randomId("itm_");
     const sellingPrice = toNullableNumber(req.body.sellingPrice);
+    const category = normalizeItemCategory(req.body.category);
     const result = await query(
       `
-        insert into items (id, business_id, name, type, unit, min_qty, selling_price)
-        values ($1, $2, $3, $4, $5, $6, $7)
+        insert into items (id, business_id, name, category, type, unit, min_qty, selling_price)
+        values ($1, $2, $3, $4, $5, $6, $7, $8)
         returning *
       `,
-      [id, req.auth.businessId, req.body.name, req.body.type, req.body.unit, Number(req.body.minQty), sellingPrice]
+      [id, req.auth.businessId, req.body.name, category, req.body.type, req.body.unit, Number(req.body.minQty), sellingPrice]
     );
 
     res.status(201).json(mapItem(result.rows[0]));
@@ -954,20 +1007,22 @@ app.put(
   requireAuth,
   asyncHandler(async (req, res) => {
     const sellingPrice = toNullableNumber(req.body.sellingPrice);
+    const category = normalizeItemCategory(req.body.category);
     const result = await query(
       `
         update items
         set
           name = $3,
-          type = $4,
-          unit = $5,
-          min_qty = $6,
-          selling_price = $7,
+          category = $4,
+          type = $5,
+          unit = $6,
+          min_qty = $7,
+          selling_price = $8,
           updated_at = now()
         where id = $1 and business_id = $2
         returning *
       `,
-      [req.params.id, req.auth.businessId, req.body.name, req.body.type, req.body.unit, Number(req.body.minQty), sellingPrice]
+      [req.params.id, req.auth.businessId, req.body.name, category, req.body.type, req.body.unit, Number(req.body.minQty), sellingPrice]
     );
 
     if (result.rowCount === 0) {
@@ -1151,6 +1206,121 @@ app.delete(
     }
 
     res.json({ ok: true });
+  })
+);
+
+app.post(
+  "/api/pos/checkout",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const date = typeof req.body.date === "string" ? req.body.date : "";
+    const lines = Array.isArray(req.body.lines) ? req.body.lines : [];
+
+    if (!date) {
+      sendError(res, 400, "Tanggal transaksi wajib diisi.");
+      return;
+    }
+
+    if (lines.length === 0) {
+      sendError(res, 400, "Keranjang PoS masih kosong.");
+      return;
+    }
+
+    const uniqueItemIds = [...new Set(lines.map((line) => (typeof line.itemId === "string" ? line.itemId : "")).filter(Boolean))];
+    const requestedQtyByItemId = {};
+
+    for (const line of lines) {
+      const qty = Number(line.qty);
+      const itemId = typeof line.itemId === "string" ? line.itemId : "";
+
+      if (!itemId || !Number.isFinite(qty) || qty <= 0) {
+        sendError(res, 400, "Format item PoS tidak valid.");
+        return;
+      }
+
+      requestedQtyByItemId[itemId] = (requestedQtyByItemId[itemId] || 0) + qty;
+    }
+
+    const payload = await withTransaction(async (client) => {
+      const itemResults = await client.query(
+        `
+          select id, name, category, type, unit, selling_price
+          from items
+          where business_id = $1 and id = any($2::text[])
+        `,
+        [req.auth.businessId, uniqueItemIds]
+      );
+
+      const itemById = new Map(itemResults.rows.map((row) => [row.id, row]));
+      if (itemById.size !== uniqueItemIds.length) {
+        throw createHttpError(404, "Ada produk PoS yang tidak ditemukan.");
+      }
+
+      for (const line of lines) {
+        const item = itemById.get(line.itemId);
+
+        if (!item) {
+          throw createHttpError(404, "Produk PoS tidak ditemukan.");
+        }
+
+        if (item.type !== "FINISHED") {
+          throw createHttpError(400, `Produk ${item.name} belum termasuk barang jadi, jadi tidak bisa dijual lewat PoS.`);
+        }
+
+        if (item.selling_price === null) {
+          throw createHttpError(400, `Produk ${item.name} belum memiliki harga jual.`);
+        }
+      }
+
+      const stockByItemId = await loadAvailableStockByItemIds(client, req.auth.businessId, uniqueItemIds);
+
+      for (const itemId of uniqueItemIds) {
+        const item = itemById.get(itemId);
+        const requestedQty = requestedQtyByItemId[itemId] || 0;
+        const availableQty = stockByItemId[itemId] || 0;
+
+        if (requestedQty > availableQty) {
+          throw createHttpError(
+            400,
+            `Stok ${item?.name || itemId} tidak cukup. Tersedia ${availableQty} ${item?.unit || ""}, diminta ${requestedQty} ${item?.unit || ""}.`
+          );
+        }
+      }
+
+      const createdSales = [];
+      let totalQty = 0;
+      let totalRevenue = 0;
+
+      for (const line of lines) {
+        const item = itemById.get(line.itemId);
+        const qty = Number(line.qty);
+        const sellingPrice = Number(item.selling_price);
+        const totalLineRevenue = qty * sellingPrice;
+        const result = await client.query(
+          `
+            insert into sales (id, business_id, date, item_id, qty, total_revenue)
+            values ($1, $2, $3, $4, $5, $6)
+            returning *
+          `,
+          [randomId("sal_"), req.auth.businessId, date, line.itemId, qty, totalLineRevenue]
+        );
+
+        createdSales.push(mapSale(result.rows[0]));
+        totalQty += qty;
+        totalRevenue += totalLineRevenue;
+      }
+
+      return {
+        sales: createdSales,
+        summary: {
+          totalLines: createdSales.length,
+          totalQty,
+          totalRevenue,
+        },
+      };
+    });
+
+    res.status(201).json(payload);
   })
 );
 

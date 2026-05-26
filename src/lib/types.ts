@@ -1,6 +1,14 @@
 export type ItemType = "RAW" | "HALF_FINISHED" | "FINISHED";
 export type BusinessRole = "super_admin" | "admin" | "staff";
-export type AppMenuKey = "dashboard" | "inventory" | "purchases" | "productions" | "sales" | "expenses" | "calculator";
+export type AppMenuKey =
+  | "dashboard"
+  | "inventory"
+  | "purchases"
+  | "productions"
+  | "sales"
+  | "pos"
+  | "expenses"
+  | "calculator";
 export type MemberStatus = "active" | "invited";
 export type MenuVisibility = Record<AppMenuKey, boolean>;
 
@@ -17,6 +25,7 @@ export interface BusinessMenuPackage {
 export interface Item {
   id: string;
   name: string;
+  category: string;
   type: ItemType;
   unit: string;
   minQty: number;
@@ -52,6 +61,22 @@ export interface Sale {
   itemId: string;
   qty: number;
   totalRevenue: number;
+}
+
+export interface PosCheckoutLine {
+  itemId: string;
+  qty: number;
+}
+
+export interface PosCheckoutSummary {
+  totalLines: number;
+  totalQty: number;
+  totalRevenue: number;
+}
+
+export interface PosCheckoutResult {
+  sales: Sale[];
+  summary: PosCheckoutSummary;
 }
 
 export interface Expense {

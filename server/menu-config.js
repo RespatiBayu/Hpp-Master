@@ -25,6 +25,11 @@ export const businessMenuDefinitions = [
     description: "Pencatatan transaksi penjualan produk.",
   },
   {
+    id: "pos",
+    label: "PoS Kasir",
+    description: "Layar kasir cepat untuk input penjualan harian.",
+  },
+  {
     id: "expenses",
     label: "Beban Operasional",
     description: "Pengeluaran usaha di luar bahan baku.",

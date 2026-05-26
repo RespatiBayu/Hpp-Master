@@ -1,14 +1,16 @@
 import React, { useState } from "react";
-import { useAppContext } from "../store/AppContext";
 import { Plus, Edit2, Trash2 } from "lucide-react";
+
+import { getTodayDateValue } from "../lib/date";
 import { Sale } from "../lib/types";
+import { useAppContext } from "../store/AppContext";
 
 export default function SalesView() {
   const { items, sales, addSale, editSale, deleteSale } = useAppContext();
   const finishedItems = items.filter(i => i.type === "FINISHED");
 
   const [isAdding, setIsAdding] = useState(false);
-  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(getTodayDateValue);
   const [itemId, setItemId] = useState("");
   const [qty, setQty] = useState("");
   const [totalRevenue, setTotalRevenue] = useState("");

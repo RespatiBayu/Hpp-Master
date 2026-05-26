@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronUp, LayoutDashboard, type LucideIcon, UserCircle, Settings, LogOut, Loader2, Package, ShoppingCart, Activity, FilePlus, Receipt, Calculator, Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
+import { ChevronUp, LayoutDashboard, type LucideIcon, UserCircle, Settings, LogOut, Loader2, Package, ShoppingCart, Activity, FilePlus, Receipt, Calculator, Menu, PanelLeftClose, PanelLeftOpen, Store, X } from "lucide-react";
 
 import { getRoleLabel } from "./lib/access";
 import { businessMenuDefinitions } from "./lib/menu-config";
@@ -10,6 +10,7 @@ import InventoryView from "./views/InventoryView";
 import PurchasesView from "./views/PurchasesView";
 import ProductionsView from "./views/ProductionsView";
 import SalesView from "./views/SalesView";
+import PosView from "./views/PosView";
 import ExpensesView from "./views/ExpensesView";
 import AdminPanel from "./views/AdminPanel";
 import LoginView from "./views/LoginView";
@@ -32,6 +33,7 @@ export default function MainApp() {
     purchases: ShoppingCart,
     productions: Activity,
     sales: FilePlus,
+    pos: Store,
     expenses: Receipt,
     calculator: Calculator,
   } as const;
@@ -335,6 +337,7 @@ export default function MainApp() {
             {activeTab === "purchases" && <PurchasesView />}
             {activeTab === "productions" && <ProductionsView />}
             {activeTab === "sales" && <SalesView />}
+            {activeTab === "pos" && <PosView />}
             {activeTab === "expenses" && <ExpensesView />}
             {activeTab === "calculator" && <BusinessCalculatorView />}
             {activeTab === "admin" && <AdminPanel />}

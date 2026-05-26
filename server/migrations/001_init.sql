@@ -47,6 +47,7 @@ create table if not exists items (
   id text primary key,
   business_id text not null references businesses(id) on delete cascade,
   name text not null,
+  category text not null default 'Umum',
   type text not null check (type in ('RAW', 'HALF_FINISHED', 'FINISHED')),
   unit text not null,
   min_qty numeric not null default 0,
@@ -176,3 +177,10 @@ check (role in ('super_admin', 'admin', 'staff'));
 
 alter table businesses
 add column if not exists allow_admin_create_staff boolean not null default true;
+
+alter table items
+add column if not exists category text not null default 'Umum';
+
+update items
+set category = 'Umum'
+where category is null;

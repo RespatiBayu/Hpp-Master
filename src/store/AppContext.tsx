@@ -14,6 +14,8 @@ import type {
   Expense,
   Item,
   MenuVisibility,
+  PosCheckoutLine,
+  PosCheckoutResult,
   Production,
   Purchase,
   Sale,
@@ -49,6 +51,7 @@ interface AppState {
   deletePurchase: (id: string) => Promise<void>;
   addProduction: (production: Omit<Production, "id">) => Promise<void>;
   addSale: (sale: Omit<Sale, "id">) => Promise<void>;
+  checkoutPosSale: (payload: { date: string; lines: PosCheckoutLine[] }) => Promise<PosCheckoutResult>;
   editSale: (id: string, updatedSale: Partial<Sale>) => Promise<void>;
   deleteSale: (id: string) => Promise<void>;
   addExpense: (expense: Omit<Expense, "id">) => Promise<void>;
@@ -92,6 +95,10 @@ const emptyCollections = {
 };
 
 const emptyMenuVisibility = createDefaultMenuVisibility();
+const normalizeItemRecord = (item: Item): Item => ({
+  ...item,
+  category: typeof item.category === "string" && item.category.trim() ? item.category.trim() : "Umum",
+});
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -137,7 +144,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setBusinessName(payload.business.name);
     setBusinessRole(payload.business.role);
     setBusinesses(payload.businesses);
-    setItems(payload.items);
+    setItems(payload.items.map(normalizeItemRecord));
     setPurchases(payload.purchases);
     setProductions(payload.productions);
     setSales(payload.sales);
@@ -227,24 +234,31 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const addItem = async (item: Omit<Item, "id">) => {
     const created = await appApi.items.create(item);
-    setItems((prev) => [...prev, created]);
-    await logActivity("ADD_ITEM", `Menambahkan barang: ${created.name}`);
+    const normalized = normalizeItemRecord(created);
+    setItems((prev) => [...prev, normalized]);
+    await logActivity("ADD_ITEM", `Menambahkan barang: ${normalized.name} (${normalized.category})`);
   };
 
   const editItem = async (id: string, updatedItem: Partial<Item>) => {
     const current = items.find((item) => item.id === id);
     if (!current) return;
+    const nextSellingPrice = Object.prototype.hasOwnProperty.call(updatedItem, "sellingPrice")
+      ? updatedItem.sellingPrice
+      : current.sellingPrice;
 
-    const saved = await appApi.items.update(id, {
-      name: updatedItem.name ?? current.name,
-      type: updatedItem.type ?? current.type,
-      unit: updatedItem.unit ?? current.unit,
-      minQty: updatedItem.minQty ?? current.minQty,
-      sellingPrice: updatedItem.sellingPrice ?? current.sellingPrice,
-    });
+    const saved = normalizeItemRecord(
+      await appApi.items.update(id, {
+        name: updatedItem.name ?? current.name,
+        category: updatedItem.category ?? current.category,
+        type: updatedItem.type ?? current.type,
+        unit: updatedItem.unit ?? current.unit,
+        minQty: updatedItem.minQty ?? current.minQty,
+        sellingPrice: nextSellingPrice,
+      })
+    );
 
     setItems((prev) => prev.map((item) => (item.id === id ? saved : item)));
-    await logActivity("EDIT_ITEM", `Mengubah barang: ${saved.name}`);
+    await logActivity("EDIT_ITEM", `Mengubah barang: ${saved.name} (${saved.category})`);
   };
 
   const deleteItem = async (id: string) => {
@@ -296,6 +310,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setSales((prev) => [created, ...prev]);
     const item = items.find((entry) => entry.id === created.itemId);
     await logActivity("ADD_SALE", `Penjualan ${item?.name || created.itemId} x${created.qty}`);
+  };
+
+  const checkoutPosSale = async (payload: { date: string; lines: PosCheckoutLine[] }) => {
+    const response = await appApi.pos.checkout(payload);
+    setSales((prev) => [...response.sales.slice().reverse(), ...prev]);
+
+    await logActivity(
+      "POS_CHECKOUT",
+      `Checkout PoS ${response.summary.totalLines} produk, ${response.summary.totalQty} item, total Rp ${response.summary.totalRevenue.toLocaleString()}`
+    );
+
+    return response;
   };
 
   const editSale = async (id: string, updatedSale: Partial<Sale>) => {
@@ -515,6 +541,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         deletePurchase,
         addProduction,
         addSale,
+        checkoutPosSale,
         editSale,
         deleteSale,
         addExpense,

@@ -1,8 +1,10 @@
 import React, { useState } from "react";
-import { useAppContext } from "../store/AppContext";
 import { Plus, X } from "lucide-react";
-import { RawMaterialUsage } from "../lib/types";
+
 import { calculateItemStats } from "../lib/calculators";
+import { getTodayDateValue } from "../lib/date";
+import { RawMaterialUsage } from "../lib/types";
+import { useAppContext } from "../store/AppContext";
 
 export default function ProductionsView() {
   const { items, purchases, productions, sales, addProduction } = useAppContext();
@@ -12,7 +14,7 @@ export default function ProductionsView() {
   const stats = calculateItemStats(items, purchases, productions, sales);
 
   const [isAdding, setIsAdding] = useState(false);
-  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(getTodayDateValue);
   const [finishedItemId, setFinishedItemId] = useState("");
   const [finishedQty, setFinishedQty] = useState("");
   const [overheadCost, setOverheadCost] = useState("");

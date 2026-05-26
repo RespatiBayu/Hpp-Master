@@ -9,6 +9,8 @@ import type {
   Expense,
   Item,
   MenuVisibility,
+  PosCheckoutLine,
+  PosCheckoutResult,
   Production,
   Purchase,
   Sale,
@@ -94,7 +96,7 @@ export const appApi = {
         method: "POST",
         body: JSON.stringify(item),
       }),
-    update: (id: string, item: Partial<Item> & Pick<Item, "name" | "type" | "unit" | "minQty">) =>
+    update: (id: string, item: Partial<Item> & Pick<Item, "name" | "category" | "type" | "unit" | "minQty">) =>
       apiFetch<Item>(`/api/items/${id}`, {
         method: "PUT",
         body: JSON.stringify(item),
@@ -141,6 +143,13 @@ export const appApi = {
     remove: (id: string) =>
       apiFetch<{ ok: boolean }>(`/api/sales/${id}`, {
         method: "DELETE",
+      }),
+  },
+  pos: {
+    checkout: (payload: { date: string; lines: PosCheckoutLine[] }) =>
+      apiFetch<PosCheckoutResult>("/api/pos/checkout", {
+        method: "POST",
+        body: JSON.stringify(payload),
       }),
   },
   expenses: {
