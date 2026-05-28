@@ -199,12 +199,27 @@ create index if not exists idx_item_categories_business_id on item_categories(bu
 
 insert into item_categories (id, business_id, name, normalized_name)
 select
-  'cat_' || md5(items.business_id || '|' || lower(trim(items.category))),
-  items.business_id,
-  trim(items.category),
-  lower(trim(items.category))
-from items
-where trim(coalesce(items.category, '')) <> ''
+  'cat_' || md5(source.business_id || '|' || source.normalized_name),
+  source.business_id,
+  source.name,
+  source.normalized_name
+from (
+  select distinct on (items.business_id, lower(trim(items.category)))
+    items.business_id,
+    trim(items.category) as name,
+    lower(trim(items.category)) as normalized_name
+  from items
+  where trim(coalesce(items.category, '')) <> ''
+  order by
+    items.business_id,
+    lower(trim(items.category)),
+    case
+      when trim(items.category) ~ '[A-Z]' then 0
+      else 1
+    end,
+    length(trim(items.category)) desc,
+    trim(items.category) asc
+) as source
 on conflict (business_id, normalized_name) do update
 set name = excluded.name,
     updated_at = now();
