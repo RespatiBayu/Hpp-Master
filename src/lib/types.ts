@@ -30,6 +30,9 @@ export interface Item {
   unit: string;
   minQty: number;
   sellingPrice?: number;
+  hasPhoto?: boolean;
+  photoUrl?: string;
+  stockQty?: number;
 }
 
 export interface Purchase {
@@ -61,6 +64,9 @@ export interface Sale {
   itemId: string;
   qty: number;
   totalRevenue: number;
+  source?: "manual" | "pos";
+  posOrderId?: string;
+  unitPrice?: number;
 }
 
 export interface PosCheckoutLine {
@@ -68,15 +74,73 @@ export interface PosCheckoutLine {
   qty: number;
 }
 
+export type PosPaymentMethod = "cash" | "qris" | "bank_transfer" | "debit_credit";
+
 export interface PosCheckoutSummary {
   totalLines: number;
   totalQty: number;
   totalRevenue: number;
 }
 
+export interface PosOrderLine {
+  id: string;
+  itemId: string;
+  itemName: string;
+  category: string;
+  unit: string;
+  qty: number;
+  unitPrice: number;
+  lineTotal: number;
+}
+
+export interface PosOrder {
+  id: string;
+  orderNumber: string;
+  shareToken: string;
+  date: string;
+  status: string;
+  paymentMethod: PosPaymentMethod;
+  subtotal: number;
+  total: number;
+  paidAmount: number;
+  changeAmount: number;
+  cashierName: string | null;
+  createdAt: string;
+  receiptSettings: PosSettings;
+  lines: PosOrderLine[];
+}
+
 export interface PosCheckoutResult {
+  order?: PosOrder;
   sales: Sale[];
   summary: PosCheckoutSummary;
+  invoiceUrl?: string;
+}
+
+export interface PosSettings {
+  paperWidth: "58mm" | "80mm";
+  headerText: string;
+  footerText: string;
+  showCashier: boolean;
+  showPaymentMethod: boolean;
+}
+
+export interface PosBootstrapPayload {
+  user: {
+    id: string;
+    email: string | null;
+    displayName: string | null;
+    provider: string | null;
+  };
+  business: {
+    id: string;
+    name: string;
+    role: BusinessRole;
+  };
+  items: Item[];
+  categories: Category[];
+  posSettings: PosSettings;
+  todaysOrders: PosOrder[];
 }
 
 export interface Expense {
@@ -84,6 +148,32 @@ export interface Expense {
   date: string;
   description: string;
   amount: number;
+}
+
+export interface Category {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiIntakePlan {
+  source: "text" | "image";
+  model: string;
+  targetMenu: "purchases" | "sales" | "expenses";
+  formId: "purchase_create" | "sale_create" | "expense_create";
+  fields: Record<string, unknown>;
+  missingFields: string[];
+  summary: string;
+  confidence: number;
+  catalogFinishedItems?: Item[];
+}
+
+export interface TelegramLinkResult {
+  linkCode: string;
+  expiresAt: string;
+  command: string;
+  botConfigured: boolean;
 }
 
 export interface AppUser {

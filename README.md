@@ -129,7 +129,7 @@ Role bisnis saat ini:
 - `super_admin`
   Berperan sebagai pemilik platform. Bisa melihat user lintas bisnis, serta menambah, mengubah, dan menghapus user `super_admin`, `admin`, maupun `staff` di bisnis mana pun, sekaligus membuka/menutup menu bisnis pada bisnis aktif.
 - `admin`
-  Bisa mengelola user `staff`, mengatur paket menu, dan melakukan override show/hide menu untuk staff di bisnis aktif.
+  Bisa mengelola user `staff`, mengatur user role, dan melakukan override show/hide menu untuk staff di bisnis aktif.
 - `staff`
   Tidak punya akses pengelolaan user maupun pengaturan admin.
 
@@ -211,7 +211,7 @@ Catatan:
 - manajemen user bisnis
 - log aktivitas sistem
 - kontrol visibilitas menu per bisnis
-- paket menu dan override show/hide menu untuk staff di bisnis aktif
+- user role dan override show/hide menu untuk staff di bisnis aktif
 
 ### Kalkulator F&B
 

@@ -6,6 +6,7 @@ import { getBusinessMenuLabel, createDefaultMenuVisibility } from "../lib/menu-c
 import type {
   AppMenuKey,
   AppUser,
+  Category,
   BulkUserUploadResult,
   BulkUserUploadRow,
   BusinessMenuPackage,
@@ -16,14 +17,17 @@ import type {
   MenuVisibility,
   PosCheckoutLine,
   PosCheckoutResult,
+  PosSettings,
   Production,
   Purchase,
   Sale,
+  TelegramLinkResult,
   UserActivity,
 } from "../lib/types";
 
 interface AppState {
   items: Item[];
+  categories: Category[];
   purchases: Purchase[];
   productions: Production[];
   sales: Sale[];
@@ -37,15 +41,21 @@ interface AppState {
   businesses: BusinessSummary[];
   menuVisibility: MenuVisibility;
   menuPackages: BusinessMenuPackage[];
+  posSettings: PosSettings;
   needsAuth: boolean;
   isLoading: boolean;
   error: string | null;
   loginError: string | null;
   loginWithEmail: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  addItem: (item: Omit<Item, "id">) => Promise<void>;
-  editItem: (id: string, updatedItem: Partial<Item>) => Promise<void>;
+  addItem: (item: Omit<Item, "id">) => Promise<Item>;
+  editItem: (id: string, updatedItem: Partial<Item>) => Promise<Item | undefined>;
+  uploadItemPhoto: (id: string, dataUrl: string) => Promise<void>;
+  deleteItemPhoto: (id: string) => Promise<void>;
   deleteItem: (id: string) => Promise<void>;
+  createCategory: (name: string) => Promise<Category>;
+  updateCategory: (id: string, name: string) => Promise<Category>;
+  deleteCategory: (id: string) => Promise<void>;
   addPurchase: (purchase: Omit<Purchase, "id">) => Promise<void>;
   editPurchase: (id: string, updatedPurchase: Partial<Purchase>) => Promise<void>;
   deletePurchase: (id: string) => Promise<void>;
@@ -77,6 +87,8 @@ interface AppState {
   updateMenuPackage: (id: string, payload: { name: string; description?: string; menuVisibility: MenuVisibility }) => Promise<void>;
   deleteMenuPackage: (id: string) => Promise<void>;
   applyMenuPackage: (id: string) => Promise<void>;
+  updatePosSettings: (payload: PosSettings) => Promise<void>;
+  createTelegramLink: () => Promise<TelegramLinkResult>;
   logActivity: (action: string, details: string) => Promise<void>;
 }
 
@@ -84,6 +96,7 @@ const AppContext = createContext<AppState | undefined>(undefined);
 
 const emptyCollections = {
   items: [] as Item[],
+  categories: [] as Category[],
   purchases: [] as Purchase[],
   productions: [] as Production[],
   sales: [] as Sale[],
@@ -95,6 +108,13 @@ const emptyCollections = {
 };
 
 const emptyMenuVisibility = createDefaultMenuVisibility();
+const defaultPosSettings: PosSettings = {
+  paperWidth: "58mm",
+  headerText: "",
+  footerText: "",
+  showCashier: true,
+  showPaymentMethod: true,
+};
 const normalizeItemRecord = (item: Item): Item => ({
   ...item,
   category: typeof item.category === "string" && item.category.trim() ? item.category.trim() : "Umum",
@@ -107,6 +127,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [businessRole, setBusinessRole] = useState<BusinessRole | null>(null);
   const [businesses, setBusinesses] = useState<BusinessSummary[]>([]);
   const [menuVisibility, setMenuVisibility] = useState<MenuVisibility>(emptyMenuVisibility);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [posSettings, setPosSettings] = useState<PosSettings>(defaultPosSettings);
   const [needsAuth, setNeedsAuth] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -128,6 +150,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setBusinessRole(null);
     setBusinesses(emptyCollections.businesses);
     setItems(emptyCollections.items);
+    setCategories(emptyCollections.categories);
     setPurchases(emptyCollections.purchases);
     setProductions(emptyCollections.productions);
     setSales(emptyCollections.sales);
@@ -136,6 +159,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setActivities(emptyCollections.activities);
     setMenuPackages(emptyCollections.menuPackages);
     setMenuVisibility(emptyMenuVisibility);
+    setPosSettings(defaultPosSettings);
   };
 
   const applyBootstrap = (payload: BootstrapPayload) => {
@@ -144,6 +168,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setBusinessName(payload.business.name);
     setBusinessRole(payload.business.role);
     setBusinesses(payload.businesses);
+    setCategories(payload.categories || emptyCollections.categories);
     setItems(payload.items.map(normalizeItemRecord));
     setPurchases(payload.purchases);
     setProductions(payload.productions);
@@ -153,6 +178,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setActivities(payload.activities);
     setMenuPackages(payload.menuPackages || emptyCollections.menuPackages);
     setMenuVisibility(payload.menuVisibility || emptyMenuVisibility);
+    setPosSettings(payload.posSettings || defaultPosSettings);
   };
 
   const initializeData = async () => {
@@ -236,12 +262,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const created = await appApi.items.create(item);
     const normalized = normalizeItemRecord(created);
     setItems((prev) => [...prev, normalized]);
+    setCategories((prev) => {
+      if (prev.some((entry) => entry.name === normalized.category)) return prev;
+      return [...prev, { id: `tmp-${normalized.category}`, name: normalized.category, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }]
+        .sort((left, right) => left.name.localeCompare(right.name));
+    });
     await logActivity("ADD_ITEM", `Menambahkan barang: ${normalized.name} (${normalized.category})`);
+    return normalized;
   };
 
   const editItem = async (id: string, updatedItem: Partial<Item>) => {
     const current = items.find((item) => item.id === id);
-    if (!current) return;
+    if (!current) return undefined;
     const nextSellingPrice = Object.prototype.hasOwnProperty.call(updatedItem, "sellingPrice")
       ? updatedItem.sellingPrice
       : current.sellingPrice;
@@ -259,6 +291,21 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
     setItems((prev) => prev.map((item) => (item.id === id ? saved : item)));
     await logActivity("EDIT_ITEM", `Mengubah barang: ${saved.name} (${saved.category})`);
+    return saved;
+  };
+
+  const uploadItemPhoto = async (id: string, dataUrl: string) => {
+    const result = await appApi.items.uploadPhoto(id, dataUrl);
+    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, hasPhoto: result.hasPhoto, photoUrl: result.photoUrl } : item)));
+    const item = items.find((entry) => entry.id === id);
+    await logActivity("UPLOAD_ITEM_PHOTO", `Mengunggah foto produk untuk ${item?.name || id}`);
+  };
+
+  const deleteItemPhoto = async (id: string) => {
+    await appApi.items.removePhoto(id);
+    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, hasPhoto: false, photoUrl: undefined } : item)));
+    const item = items.find((entry) => entry.id === id);
+    await logActivity("DELETE_ITEM_PHOTO", `Menghapus foto produk untuk ${item?.name || id}`);
   };
 
   const deleteItem = async (id: string) => {
@@ -268,6 +315,29 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     await appApi.items.remove(id);
     setItems((prev) => prev.filter((item) => item.id !== id));
     await logActivity("DELETE_ITEM", `Menghapus barang: ${current.name}`);
+  };
+
+  const createCategory = async (name: string) => {
+    const created = await appApi.categories.create(name);
+    setCategories((prev) => [...prev, created].sort((left, right) => left.name.localeCompare(right.name)));
+    await logActivity("CREATE_CATEGORY", `Membuat kategori baru: ${created.name}`);
+    return created;
+  };
+
+  const updateCategory = async (id: string, name: string) => {
+    const previous = categories.find((entry) => entry.id === id);
+    const updated = await appApi.categories.update(id, name);
+    setCategories((prev) => prev.map((entry) => (entry.id === id ? updated : entry)).sort((left, right) => left.name.localeCompare(right.name)));
+    setItems((prev) => prev.map((item) => (item.category === previous?.name ? { ...item, category: updated.name } : item)));
+    await logActivity("UPDATE_CATEGORY", `Mengubah kategori ${previous?.name || id} menjadi ${updated.name}`);
+    return updated;
+  };
+
+  const deleteCategory = async (id: string) => {
+    const current = categories.find((entry) => entry.id === id);
+    await appApi.categories.remove(id);
+    setCategories((prev) => prev.filter((entry) => entry.id !== id));
+    await logActivity("DELETE_CATEGORY", `Menghapus kategori: ${current?.name || id}`);
   };
 
   const addPurchase = async (purchase: Omit<Purchase, "id">) => {
@@ -480,7 +550,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const response = await appApi.business.createMenuPackage(payload);
     setMenuVisibility(response.menuVisibility);
     setMenuPackages(response.menuPackages);
-    await logActivity("CREATE_MENU_PACKAGE", `Membuat paket menu: ${payload.name}`);
+    await logActivity("CREATE_MENU_PACKAGE", `Membuat user role: ${payload.name}`);
   };
 
   const updateMenuPackage = async (id: string, payload: { name: string; description?: string; menuVisibility: MenuVisibility }) => {
@@ -490,7 +560,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setMenuPackages(response.menuPackages);
     await logActivity(
       "UPDATE_MENU_PACKAGE",
-      `Memperbarui paket menu: ${previousPackage?.name || payload.name} menjadi ${payload.name}`
+      `Memperbarui user role: ${previousPackage?.name || payload.name} menjadi ${payload.name}`
     );
   };
 
@@ -499,7 +569,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const response = await appApi.business.deleteMenuPackage(id);
     setMenuVisibility(response.menuVisibility);
     setMenuPackages(response.menuPackages);
-    await logActivity("DELETE_MENU_PACKAGE", `Menghapus paket menu: ${currentPackage?.name || id}`);
+    await logActivity("DELETE_MENU_PACKAGE", `Menghapus user role: ${currentPackage?.name || id}`);
   };
 
   const applyMenuPackage = async (id: string) => {
@@ -507,13 +577,26 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const response = await appApi.business.applyMenuPackage(id);
     setMenuVisibility(response.menuVisibility);
     setMenuPackages(response.menuPackages);
-    await logActivity("APPLY_MENU_PACKAGE", `Menerapkan paket menu: ${currentPackage?.name || id}`);
+    await logActivity("APPLY_MENU_PACKAGE", `Menerapkan user role: ${currentPackage?.name || id}`);
+  };
+
+  const updatePosSettings = async (payload: PosSettings) => {
+    const updated = await appApi.pos.settings.update(payload);
+    setPosSettings(updated);
+    await logActivity("UPDATE_POS_SETTINGS", `Memperbarui pengaturan PoS (${updated.paperWidth})`);
+  };
+
+  const createTelegramLink = async () => {
+    const result = await appApi.telegram.createLink();
+    await logActivity("CREATE_TELEGRAM_LINK", `Membuat kode link Telegram baru: ${result.linkCode}`);
+    return result;
   };
 
   return (
     <AppContext.Provider
       value={{
         items,
+        categories,
         purchases,
         productions,
         sales,
@@ -527,6 +610,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         businesses,
         menuVisibility,
         menuPackages,
+        posSettings,
         needsAuth,
         isLoading,
         error,
@@ -535,7 +619,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         logout,
         addItem,
         editItem,
+        uploadItemPhoto,
+        deleteItemPhoto,
         deleteItem,
+        createCategory,
+        updateCategory,
+        deleteCategory,
         addPurchase,
         editPurchase,
         deletePurchase,
@@ -558,6 +647,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         updateMenuPackage,
         deleteMenuPackage,
         applyMenuPackage,
+        updatePosSettings,
+        createTelegramLink,
         logActivity,
       }}
     >

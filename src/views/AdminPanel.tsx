@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ActivitySquare, Check, Loader2, Pencil, Plus, Settings2, ShieldCheck, Trash2, Users } from "lucide-react";
 
 import UserManagementSection from "../components/UserManagementSection";
@@ -17,12 +17,15 @@ export default function AdminPanel() {
     activities,
     menuVisibility,
     menuPackages,
+    posSettings,
     updateBusinessStaffCreationAccess,
     updateMenuVisibility,
     createMenuPackage,
     updateMenuPackage,
     deleteMenuPackage,
     applyMenuPackage,
+    updatePosSettings,
+    createTelegramLink,
   } = useAppContext();
 
   const [savingMenuKey, setSavingMenuKey] = useState<AppMenuKey | null>(null);
@@ -35,6 +38,12 @@ export default function AdminPanel() {
   const [applyingPackageId, setApplyingPackageId] = useState<string | null>(null);
   const [deletingPackageId, setDeletingPackageId] = useState<string | null>(null);
   const [savingStaffAccessBusinessId, setSavingStaffAccessBusinessId] = useState<string | null>(null);
+  const [isSavingPosSettings, setIsSavingPosSettings] = useState(false);
+  const [isCreatingTelegramLink, setIsCreatingTelegramLink] = useState(false);
+  const [telegramLinkCode, setTelegramLinkCode] = useState<string | null>(null);
+  const [telegramLinkCommand, setTelegramLinkCommand] = useState<string | null>(null);
+  const [telegramLinkError, setTelegramLinkError] = useState<string | null>(null);
+  const [posForm, setPosForm] = useState(posSettings);
 
   const activeMenuPackage = useMemo(() => menuPackages.find((menuPackage) => menuPackage.isActive) || null, [menuPackages]);
   const totalBusinesses = businesses.length;
@@ -61,6 +70,10 @@ export default function AdminPanel() {
     () => businesses.find((business) => business.id === businessId) || null,
     [businessId, businesses]
   );
+
+  useEffect(() => {
+    setPosForm(posSettings);
+  }, [posSettings]);
 
   const openCreatePackageForm = () => {
     setEditingPackageId(null);
@@ -140,7 +153,7 @@ export default function AdminPanel() {
   };
 
   const handleDeletePackage = async (menuPackage: BusinessMenuPackage) => {
-    const confirmed = window.confirm(`Hapus paket menu "${menuPackage.name}"?`);
+    const confirmed = window.confirm(`Hapus user role "${menuPackage.name}"?`);
     if (!confirmed) return;
 
     setDeletingPackageId(menuPackage.id);
@@ -162,6 +175,32 @@ export default function AdminPanel() {
       await updateBusinessStaffCreationAccess(targetBusinessId, allowAdminCreateStaff);
     } finally {
       setSavingStaffAccessBusinessId(null);
+    }
+  };
+
+  const handleSavePosSettings = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsSavingPosSettings(true);
+
+    try {
+      await updatePosSettings(posForm);
+    } finally {
+      setIsSavingPosSettings(false);
+    }
+  };
+
+  const handleCreateTelegramLink = async () => {
+    setIsCreatingTelegramLink(true);
+    setTelegramLinkError(null);
+
+    try {
+      const result = await createTelegramLink();
+      setTelegramLinkCode(result.linkCode);
+      setTelegramLinkCommand(result.command);
+    } catch (error: any) {
+      setTelegramLinkError(error.message || "Kode link Telegram gagal dibuat.");
+    } finally {
+      setIsCreatingTelegramLink(false);
     }
   };
 
@@ -325,9 +364,9 @@ export default function AdminPanel() {
               <Settings2 className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">Paket Menu</h2>
+              <h2 className="text-lg font-bold text-slate-900">User Role</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Admin bisnis dan super admin bisa membuat paket akses menu untuk bisnis aktif agar staff mengikuti pengaturan yang sama.
+                Istilah user role di dashboard sekarang mewakili preset akses menu untuk staff pada bisnis aktif.
               </p>
             </div>
           </div>
@@ -337,7 +376,7 @@ export default function AdminPanel() {
               onClick={openCreatePackageForm}
               className="inline-flex w-full items-center justify-center rounded-lg bg-sky-50 px-3 py-2 text-sm font-bold text-sky-700 transition-colors hover:bg-sky-100 sm:w-auto"
             >
-              <Plus className="mr-1 h-4 w-4" /> Buat Paket
+              <Plus className="mr-1 h-4 w-4" /> Buat User Role
             </button>
           ) : (
             <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-500">
@@ -351,15 +390,15 @@ export default function AdminPanel() {
           <div className="mb-5 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700">
               <Check className="h-4 w-4" />
-              Paket aktif saat ini: {activeMenuPackage.name}
+              User role aktif saat ini: {activeMenuPackage.name}
             </div>
             <p className="mt-1 text-sm text-emerald-900/80">
-              Jika Anda melakukan override manual per menu di bawah, status paket aktif akan dilepas otomatis.
+              Jika Anda melakukan override manual per menu di bawah, status role aktif akan dilepas otomatis.
             </p>
           </div>
         ) : (
           <div className="mb-5 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-500">
-            Belum ada paket menu yang aktif. Anda masih bisa mengatur akses manual per menu.
+            Belum ada user role yang aktif. Anda masih bisa mengatur akses manual per menu.
           </div>
         )}
 
@@ -367,8 +406,8 @@ export default function AdminPanel() {
           <form onSubmit={handleSubmitPackage} className="mb-6 rounded-2xl border border-sky-100 bg-sky-50/60 p-5">
             <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h3 className="text-base font-bold text-slate-900">{editingPackageId ? "Ubah Paket Menu" : "Buat Paket Menu Baru"}</h3>
-                <p className="mt-1 text-sm text-slate-500">Pilih kombinasi menu yang akan dibundel dalam satu paket akses.</p>
+                <h3 className="text-base font-bold text-slate-900">{editingPackageId ? "Ubah User Role" : "Buat User Role Baru"}</h3>
+                <p className="mt-1 text-sm text-slate-500">Pilih kombinasi menu yang akan dibundel dalam satu role akses.</p>
               </div>
               <button
                 type="button"
@@ -381,13 +420,13 @@ export default function AdminPanel() {
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div>
-                <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Nama Paket</label>
+                <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Nama User Role</label>
                 <input
                   type="text"
                   required
                   value={packageName}
                   onChange={(event) => setPackageName(event.target.value)}
-                  placeholder="Contoh: Paket Starter"
+                  placeholder="Contoh: Kasir Reguler"
                   className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500/20"
                 />
               </div>
@@ -436,7 +475,7 @@ export default function AdminPanel() {
                 className="inline-flex w-full items-center justify-center rounded-xl bg-sky-600 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
               >
                 {isSavingPackage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                {editingPackageId ? "Simpan Perubahan Paket" : "Simpan Paket Menu"}
+                {editingPackageId ? "Simpan Perubahan User Role" : "Simpan User Role"}
               </button>
             </div>
           </form>
@@ -445,7 +484,7 @@ export default function AdminPanel() {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {menuPackages.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500 lg:col-span-2">
-              Belum ada paket menu. Buat paket pertama agar pengaturan akses bisnis lebih cepat.
+              Belum ada user role. Buat role pertama agar pengaturan akses bisnis lebih cepat.
             </div>
           ) : (
             menuPackages.map((menuPackage) => {
@@ -466,7 +505,7 @@ export default function AdminPanel() {
                         ) : null}
                       </div>
                       <p className="mt-1 text-sm leading-relaxed text-slate-500">
-                        {menuPackage.description || "Tanpa deskripsi paket."}
+                        {menuPackage.description || "Tanpa deskripsi role."}
                       </p>
                     </div>
 
@@ -476,7 +515,7 @@ export default function AdminPanel() {
                           type="button"
                           onClick={() => openEditPackageForm(menuPackage)}
                           className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white hover:text-sky-600"
-                          title="Ubah paket"
+                          title="Ubah user role"
                         >
                           <Pencil className="h-4 w-4" />
                         </button>
@@ -485,7 +524,7 @@ export default function AdminPanel() {
                           disabled={isDeleting}
                           onClick={() => void handleDeletePackage(menuPackage)}
                           className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-70"
-                          title="Hapus paket"
+                          title="Hapus user role"
                         >
                           {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                         </button>
@@ -522,7 +561,7 @@ export default function AdminPanel() {
                         }`}
                       >
                         {isApplying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : menuPackage.isActive ? <Check className="mr-2 h-4 w-4" /> : null}
-                        {menuPackage.isActive ? "Paket Sedang Aktif" : "Terapkan Paket"}
+                        {menuPackage.isActive ? "Role Sedang Aktif" : "Terapkan User Role"}
                       </button>
                     </div>
                   ) : null}
@@ -530,6 +569,118 @@ export default function AdminPanel() {
               );
             })
           )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+        <form onSubmit={handleSavePosSettings} className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+          <div className="mb-6 flex items-start">
+            <div className="mr-3 rounded-lg bg-emerald-50 p-2 text-emerald-600">
+              <Settings2 className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Pengaturan Struk PoS</h2>
+              <p className="mt-1 text-sm text-slate-500">Atur lebar kertas, header, footer, dan metadata yang muncul di struk kasir.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <label className="block">
+              <span className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Lebar Kertas</span>
+              <select
+                value={posForm.paperWidth}
+                onChange={(event) => setPosForm((current) => ({ ...current, paperWidth: event.target.value as "58mm" | "80mm" }))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              >
+                <option value="58mm">58 mm</option>
+                <option value="80mm">80 mm</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Header Struk</span>
+              <input
+                type="text"
+                value={posForm.headerText}
+                onChange={(event) => setPosForm((current) => ({ ...current, headerText: event.target.value }))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                placeholder="Contoh: Terima kasih sudah berbelanja"
+              />
+            </label>
+
+            <label className="block lg:col-span-2">
+              <span className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-400">Footer Struk</span>
+              <input
+                type="text"
+                value={posForm.footerText}
+                onChange={(event) => setPosForm((current) => ({ ...current, footerText: event.target.value }))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                placeholder="Contoh: Follow IG @hppmaster"
+              />
+            </label>
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            <label className="inline-flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+              <input
+                type="checkbox"
+                checked={posForm.showCashier}
+                onChange={(event) => setPosForm((current) => ({ ...current, showCashier: event.target.checked }))}
+              />
+              Tampilkan nama kasir
+            </label>
+            <label className="inline-flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+              <input
+                type="checkbox"
+                checked={posForm.showPaymentMethod}
+                onChange={(event) => setPosForm((current) => ({ ...current, showPaymentMethod: event.target.checked }))}
+              />
+              Tampilkan metode pembayaran
+            </label>
+          </div>
+
+          <div className="mt-6 flex sm:justify-end">
+            <button
+              type="submit"
+              disabled={isSavingPosSettings}
+              className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
+            >
+              {isSavingPosSettings ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Simpan Pengaturan PoS
+            </button>
+          </div>
+        </form>
+
+        <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+          <div className="mb-6 flex items-start">
+            <div className="mr-3 rounded-lg bg-indigo-50 p-2 text-indigo-600">
+              <Users className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Link Telegram</h2>
+              <p className="mt-1 text-sm text-slate-500">Buat kode sekali pakai agar user bisa menghubungkan chat Telegram ke bisnis aktif.</p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            disabled={isCreatingTelegramLink}
+            onClick={() => void handleCreateTelegramLink()}
+            className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {isCreatingTelegramLink ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Buat Kode Link Telegram
+          </button>
+
+          {telegramLinkError ? <p className="mt-3 text-sm text-red-600">{telegramLinkError}</p> : null}
+          {telegramLinkCode ? (
+            <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
+              <div className="text-xs font-bold uppercase tracking-wide text-indigo-500">Kode Aktif</div>
+              <div className="mt-2 text-2xl font-bold text-slate-900">{telegramLinkCode}</div>
+              <p className="mt-2 text-sm text-slate-600">Kirim perintah berikut ke bot Telegram:</p>
+              <code className="mt-2 block rounded-xl bg-white px-3 py-2 text-sm text-slate-900 shadow-sm">{telegramLinkCommand}</code>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -542,7 +693,7 @@ export default function AdminPanel() {
             <div>
               <h2 className="text-lg font-bold text-slate-900">Override Per Menu</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Gunakan untuk menampilkan atau menyembunyikan menu staff pada bisnis aktif di luar paket menu yang tersedia.
+                Gunakan untuk menampilkan atau menyembunyikan menu staff pada bisnis aktif di luar user role yang tersedia.
               </p>
             </div>
           </div>

@@ -1,16 +1,30 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Edit2, Plus, Search, Tags, Trash2 } from "lucide-react";
+import { Edit2, ImagePlus, Plus, Search, Tags, Trash2 } from "lucide-react";
 
 import { coerceAssistantNumber, coerceAssistantText, subscribeAssistantPrefill } from "../lib/assistant";
 import { calculateItemStats } from "../lib/calculators";
+import { formatCurrency, formatQty } from "../lib/format";
+import { resizeImageToDataUrl } from "../lib/images";
 import { getItemTypeLabel } from "../lib/items";
-import { type Item, type ItemType } from "../lib/types";
+import { type Category, type Item, type ItemType } from "../lib/types";
 import { useAppContext } from "../store/AppContext";
 
-const formatCurrency = (value: number) => `Rp ${Math.round(value).toLocaleString()}`;
-
 export default function InventoryView() {
-  const { items, purchases, productions, sales, addItem, editItem, deleteItem } = useAppContext();
+  const {
+    items,
+    categories: categoryRecords,
+    purchases,
+    productions,
+    sales,
+    addItem,
+    editItem,
+    uploadItemPhoto,
+    deleteItemPhoto,
+    deleteItem,
+    createCategory,
+    updateCategory,
+    deleteCategory,
+  } = useAppContext();
   const stats = useMemo(() => calculateItemStats(items, purchases, productions, sales), [items, purchases, productions, sales]);
 
   const [isAdding, setIsAdding] = useState(false);
@@ -22,13 +36,20 @@ export default function InventoryView() {
   const [sellingPrice, setSellingPrice] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
+  const [newPhotoDataUrl, setNewPhotoDataUrl] = useState("");
+  const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
 
   const [editingItem, setEditingItem] = useState<Item | null>(null);
+  const [editingPhotoDataUrl, setEditingPhotoDataUrl] = useState("");
   const [itemToDelete, setItemToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [categoryDraft, setCategoryDraft] = useState("");
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [categoryToDelete, setCategoryToDelete] = useState<Category | null>(null);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
 
   const categories = useMemo(
-    () => [...new Set<string>(items.map((item) => item.category.trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right)),
-    [items]
+    () => categoryRecords.map((entry) => entry.name),
+    [categoryRecords]
   );
 
   const filteredItems = useMemo(() => {
@@ -50,7 +71,7 @@ export default function InventoryView() {
     event.preventDefault();
     if (!name || !unit || !minQty) return;
 
-    await addItem({
+    const created = await addItem({
       name: name.trim(),
       category: category.trim() || "Umum",
       type,
@@ -59,6 +80,10 @@ export default function InventoryView() {
       sellingPrice: type === "FINISHED" && sellingPrice !== "" ? Number(sellingPrice) : undefined,
     });
 
+    if (newPhotoDataUrl) {
+      await uploadItemPhoto(created.id, newPhotoDataUrl);
+    }
+
     setIsAdding(false);
     setName("");
     setCategory("Umum");
@@ -66,6 +91,7 @@ export default function InventoryView() {
     setUnit("pcs");
     setMinQty("");
     setSellingPrice("");
+    setNewPhotoDataUrl("");
   };
 
   const handleDeleteClick = (id: string, itemName: string) => {
@@ -92,7 +118,52 @@ export default function InventoryView() {
       sellingPrice: editingItem.type === "FINISHED" ? editingItem.sellingPrice : undefined,
     });
 
+    if (editingPhotoDataUrl) {
+      await uploadItemPhoto(editingItem.id, editingPhotoDataUrl);
+    }
+
     setEditingItem(null);
+    setEditingPhotoDataUrl("");
+  };
+
+  const handlePhotoInput = async (file: File | undefined, mode: "new" | "edit") => {
+    if (!file) return;
+
+    setIsProcessingPhoto(true);
+    try {
+      const optimized = await resizeImageToDataUrl(file);
+      if (mode === "new") {
+        setNewPhotoDataUrl(optimized);
+      } else {
+        setEditingPhotoDataUrl(optimized);
+      }
+    } finally {
+      setIsProcessingPhoto(false);
+    }
+  };
+
+  const handleCategorySubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setCategoryError(null);
+
+    try {
+      if (editingCategory) {
+        const updated = await updateCategory(editingCategory.id, categoryDraft);
+        if (category === editingCategory.name) setCategory(updated.name);
+        if (selectedCategory === editingCategory.name) setSelectedCategory(updated.name);
+        if (editingItem?.category === editingCategory.name) {
+          setEditingItem({ ...editingItem, category: updated.name });
+        }
+      } else {
+        const created = await createCategory(categoryDraft);
+        setCategory(created.name);
+      }
+
+      setCategoryDraft("");
+      setEditingCategory(null);
+    } catch (error: any) {
+      setCategoryError(error.message || "Kategori gagal disimpan.");
+    }
   };
 
   useEffect(() => {
@@ -140,7 +211,7 @@ export default function InventoryView() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Inventori</h1>
-          <p className="mt-1 text-sm text-slate-500">Kategori barang sekarang tersimpan langsung di master item dan bisa dipakai PoS untuk filter kasir.</p>
+          <p className="mt-1 text-sm text-slate-500">Kategori sekarang memakai master dropdown yang sama untuk backoffice dan PoS, lengkap dengan foto produk.</p>
         </div>
         <button
           onClick={() => setIsAdding((current) => !current)}
@@ -189,12 +260,69 @@ export default function InventoryView() {
             <div className="rounded-2xl bg-white p-3 text-emerald-600 shadow-sm">
               <Tags className="h-5 w-5" />
             </div>
-            <div>
+            <div className="min-w-0 flex-1">
               <div className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-500">Kategori Aktif</div>
               <div className="mt-2 text-2xl font-bold text-slate-900">{categories.length}</div>
               <p className="mt-1 text-sm text-slate-600">
                 {selectedCategory === "all" ? "Semua kategori sedang ditampilkan." : `Sedang memfilter kategori ${selectedCategory}.`}
               </p>
+
+              <form onSubmit={handleCategorySubmit} className="mt-4 space-y-3">
+                <input
+                  type="text"
+                  value={categoryDraft}
+                  onChange={(event) => setCategoryDraft(event.target.value)}
+                  placeholder={editingCategory ? `Ubah ${editingCategory.name}` : "Tambah kategori baru"}
+                  className="w-full rounded-xl border border-emerald-200 bg-white/90 px-4 py-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                />
+                {categoryError ? <p className="text-xs font-medium text-red-600">{categoryError}</p> : null}
+                <div className="flex gap-2">
+                  <button type="submit" className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500">
+                    {editingCategory ? "Simpan Kategori" : "Tambah Kategori"}
+                  </button>
+                  {editingCategory ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingCategory(null);
+                        setCategoryDraft("");
+                        setCategoryError(null);
+                      }}
+                      className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-white/80"
+                    >
+                      Batal
+                    </button>
+                  ) : null}
+                </div>
+              </form>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {categoryRecords.map((entry) => (
+                  <span key={entry.id} className="inline-flex items-center gap-2 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-slate-700">
+                    {entry.name}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingCategory(entry);
+                        setCategoryDraft(entry.name);
+                        setCategoryError(null);
+                      }}
+                      className="text-slate-400 hover:text-emerald-600"
+                      aria-label={`Ubah kategori ${entry.name}`}
+                    >
+                      <Edit2 className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCategoryToDelete(entry)}
+                      className="text-slate-400 hover:text-red-600"
+                      aria-label={`Hapus kategori ${entry.name}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -216,14 +344,28 @@ export default function InventoryView() {
             </div>
             <div>
               <label className="mb-1 block text-[10px] font-bold uppercase text-slate-400">Kategori Barang</label>
-              <input
-                required
-                type="text"
+              <select
                 value={category}
                 onChange={(event) => setCategory(event.target.value)}
-                placeholder="Contoh: Minuman"
                 className="w-full rounded-xl bg-slate-50 p-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-              />
+              >
+                {categories.map((entry) => (
+                  <option key={entry} value={entry}>
+                    {entry}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  setCategoryDraft("");
+                  setEditingCategory(null);
+                  setCategoryError(null);
+                }}
+                className="mt-2 text-xs font-semibold text-emerald-600 hover:text-emerald-500"
+              >
+                + Tambah kategori baru di panel kanan
+              </button>
             </div>
             <div>
               <label className="mb-1 block text-[10px] font-bold uppercase text-slate-400">Tipe</label>
@@ -278,6 +420,21 @@ export default function InventoryView() {
                 />
               </div>
             ) : null}
+            <div className="sm:col-span-2 xl:col-span-5">
+              <label className="mb-1 block text-[10px] font-bold uppercase text-slate-400">Foto Produk</label>
+              <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600 hover:border-emerald-300 hover:bg-emerald-50/40">
+                <ImagePlus className="h-5 w-5 text-emerald-600" />
+                <span>{isProcessingPhoto ? "Memproses foto..." : newPhotoDataUrl ? "Foto siap diunggah setelah barang disimpan" : "Pilih foto dari galeri atau kamera"}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(event) => void handlePhotoInput(event.target.files?.[0], "new")}
+                />
+              </label>
+              {newPhotoDataUrl ? <img src={newPhotoDataUrl} alt="Preview produk baru" className="mt-3 h-32 rounded-2xl object-cover shadow-sm" /> : null}
+            </div>
           </div>
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button type="button" onClick={() => setIsAdding(false)} className="rounded-lg px-4 py-2 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-50">
@@ -311,13 +468,17 @@ export default function InventoryView() {
                 </div>
                 <div>
                   <label className="mb-1 block text-[10px] font-bold uppercase text-slate-400">Kategori Barang</label>
-                  <input
-                    required
-                    type="text"
+                  <select
                     value={editingItem.category}
                     onChange={(event) => setEditingItem({ ...editingItem, category: event.target.value })}
                     className="w-full rounded-xl bg-slate-50 p-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  />
+                  >
+                    {categories.map((entry) => (
+                      <option key={entry} value={entry}>
+                        {entry}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="mb-1 block text-[10px] font-bold uppercase text-slate-400">Tipe</label>
@@ -377,6 +538,51 @@ export default function InventoryView() {
                     />
                   </div>
                 ) : null}
+                <div className="sm:col-span-2">
+                  <label className="mb-1 block text-[10px] font-bold uppercase text-slate-400">Foto Produk</label>
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                    {editingPhotoDataUrl || editingItem.photoUrl ? (
+                      <img
+                        src={editingPhotoDataUrl || editingItem.photoUrl}
+                        alt={`Foto ${editingItem.name}`}
+                        className="h-36 rounded-2xl object-cover shadow-sm"
+                      />
+                    ) : (
+                      <div className="flex h-36 items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white text-sm text-slate-400">
+                        Belum ada foto produk
+                      </div>
+                    )}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-100">
+                        <ImagePlus className="h-4 w-4 text-emerald-600" />
+                        {isProcessingPhoto ? "Memproses..." : "Ganti Foto"}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          onChange={(event) => void handlePhotoInput(event.target.files?.[0], "edit")}
+                        />
+                      </label>
+                      {editingItem.hasPhoto || editingPhotoDataUrl ? (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (editingPhotoDataUrl) {
+                              setEditingPhotoDataUrl("");
+                              return;
+                            }
+                            await deleteItemPhoto(editingItem.id);
+                            setEditingItem({ ...editingItem, hasPhoto: false, photoUrl: undefined });
+                          }}
+                          className="rounded-xl px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+                        >
+                          Hapus Foto
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
               </div>
               <div className="mt-8 flex flex-col-reverse gap-3 border-t border-slate-100 pt-6 sm:flex-row sm:justify-end">
                 <button type="button" onClick={() => setEditingItem(null)} className="rounded-xl px-5 py-2.5 text-sm font-semibold text-slate-500 transition-colors hover:bg-slate-50">
@@ -404,6 +610,7 @@ export default function InventoryView() {
         <table className="min-w-[980px] text-left">
           <thead className="bg-slate-50">
             <tr>
+              <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Foto</th>
               <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Kategori Barang</th>
               <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Tipe</th>
               <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Nama Barang</th>
@@ -421,6 +628,15 @@ export default function InventoryView() {
               return (
                 <tr key={item.id} className="transition-colors hover:bg-slate-50/50">
                   <td className="px-6 py-4 text-sm text-slate-700">
+                    {item.photoUrl ? (
+                      <img src={item.photoUrl} alt={item.name} className="h-14 w-14 rounded-2xl object-cover shadow-sm" />
+                    ) : (
+                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-[10px] font-semibold text-slate-400">
+                        No Photo
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-slate-700">
                     <span className="inline-flex rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">{item.category}</span>
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-500">{getItemTypeLabel(item.type)}</td>
@@ -431,7 +647,7 @@ export default function InventoryView() {
                     ) : null}
                   </td>
                   <td className="px-6 py-4 text-right text-sm text-slate-900">
-                    {itemStat.qty.toLocaleString()} {item.unit}
+                    {formatQty(itemStat.qty)} {item.unit}
                   </td>
                   <td className="px-6 py-4 text-right text-sm text-slate-900">{formatCurrency(itemStat.avgCost)}</td>
                   <td className="px-6 py-4 text-right text-sm font-medium text-slate-900">{formatCurrency(itemStat.value)}</td>
@@ -440,7 +656,10 @@ export default function InventoryView() {
                   </td>
                   <td className="px-6 py-4 text-right text-sm">
                     <button
-                      onClick={() => setEditingItem(item)}
+                      onClick={() => {
+                        setEditingItem(item);
+                        setEditingPhotoDataUrl("");
+                      }}
                       className="mr-1 inline-flex items-center justify-center rounded-lg p-2 text-slate-400 transition-colors hover:bg-blue-50 hover:text-blue-600"
                       title="Edit Barang"
                     >
@@ -477,6 +696,41 @@ export default function InventoryView() {
               </button>
               <button
                 onClick={confirmDelete}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-500"
+              >
+                Ya, Hapus
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {categoryToDelete ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="mb-2 text-lg font-bold text-slate-900">Hapus Kategori</h3>
+            <p className="mb-6 text-sm text-slate-600">
+              Kategori <strong>{categoryToDelete.name}</strong> hanya bisa dihapus jika belum dipakai oleh barang mana pun.
+            </p>
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => setCategoryToDelete(null)}
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500 transition-colors hover:bg-slate-50"
+              >
+                Batal
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    await deleteCategory(categoryToDelete.id);
+                    if (category === categoryToDelete.name) setCategory("Umum");
+                    if (selectedCategory === categoryToDelete.name) setSelectedCategory("all");
+                    setCategoryToDelete(null);
+                  } catch (error: any) {
+                    setCategoryError(error.message || "Kategori gagal dihapus.");
+                    setCategoryToDelete(null);
+                  }
+                }}
                 className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-500"
               >
                 Ya, Hapus

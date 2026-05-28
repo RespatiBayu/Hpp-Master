@@ -2,19 +2,26 @@ import type { AssistantPlan, AssistantRequestContext } from "./assistant";
 import type {
   AppMenuKey,
   AppUser,
+  AiIntakePlan,
   BulkUserUploadResult,
   BulkUserUploadRow,
   BusinessMenuPackage,
   BusinessRole,
   BusinessSummary,
+  Category,
   Expense,
   Item,
   MenuVisibility,
+  PosBootstrapPayload,
   PosCheckoutLine,
   PosCheckoutResult,
+  PosOrder,
+  PosPaymentMethod,
+  PosSettings,
   Production,
   Purchase,
   Sale,
+  TelegramLinkResult,
   UserActivity,
 } from "./types";
 
@@ -45,6 +52,8 @@ export interface BootstrapPayload {
   activities: UserActivity[];
   menuVisibility: MenuVisibility;
   menuPackages: BusinessMenuPackage[];
+  categories: Category[];
+  posSettings: PosSettings;
 }
 
 const apiFetch = async <T>(path: string, init?: RequestInit): Promise<T> => {
@@ -102,8 +111,34 @@ export const appApi = {
         method: "PUT",
         body: JSON.stringify(item),
       }),
+    uploadPhoto: (id: string, dataUrl: string) =>
+      apiFetch<{ ok: boolean; photoUrl: string; hasPhoto: boolean }>(`/api/items/${id}/photo`, {
+        method: "POST",
+        body: JSON.stringify({ dataUrl }),
+      }),
+    removePhoto: (id: string) =>
+      apiFetch<{ ok: boolean }>(`/api/items/${id}/photo`, {
+        method: "DELETE",
+      }),
     remove: (id: string) =>
       apiFetch<{ ok: boolean }>(`/api/items/${id}`, {
+        method: "DELETE",
+      }),
+  },
+  categories: {
+    list: () => apiFetch<Category[]>("/api/categories"),
+    create: (name: string) =>
+      apiFetch<Category>("/api/categories", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      }),
+    update: (id: string, name: string) =>
+      apiFetch<Category>(`/api/categories/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ name }),
+      }),
+    remove: (id: string) =>
+      apiFetch<{ ok: boolean }>(`/api/categories/${id}`, {
         method: "DELETE",
       }),
   },
@@ -152,6 +187,21 @@ export const appApi = {
         method: "POST",
         body: JSON.stringify(payload),
       }),
+    bootstrap: () => apiFetch<PosBootstrapPayload>("/api/pos/bootstrap"),
+    settings: {
+      get: () => apiFetch<PosSettings>("/api/pos/settings"),
+      update: (payload: PosSettings) =>
+        apiFetch<PosSettings>("/api/pos/settings", {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        }),
+    },
+    createOrder: (payload: { date: string; paymentMethod: PosPaymentMethod; paidAmount?: number; lines: PosCheckoutLine[] }) =>
+      apiFetch<PosCheckoutResult>("/api/pos/orders", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    ordersToday: (date?: string) => apiFetch<PosOrder[]>(`/api/pos/orders/today${date ? `?date=${encodeURIComponent(date)}` : ""}`),
   },
   expenses: {
     create: (expense: Omit<Expense, "id">) =>
@@ -248,6 +298,17 @@ export const appApi = {
       apiFetch<AssistantPlan>("/api/assistant/input-plan", {
         method: "POST",
         body: JSON.stringify({ userMessage, context }),
+      }),
+    intakePlan: (payload: { userMessage?: string; imageDataUrl?: string }) =>
+      apiFetch<AiIntakePlan>("/api/assistant/intake-plan", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+  },
+  telegram: {
+    createLink: () =>
+      apiFetch<TelegramLinkResult>("/api/integrations/telegram/link", {
+        method: "POST",
       }),
   },
 };

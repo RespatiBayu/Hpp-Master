@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, ArrowRight, Bot, CheckCircle2, Loader2, MessageSquare, Send, Sparkles, Wand2, X } from "lucide-react";
+import { AlertCircle, ArrowRight, Bot, CheckCircle2, ImagePlus, Loader2, MessageSquare, Send, Sparkles, Wand2, X } from "lucide-react";
 
 import {
   assistantMenuOptions,
@@ -11,6 +11,7 @@ import {
 } from "../lib/assistant";
 import { appApi } from "../lib/api";
 import { getTodayDateValue } from "../lib/date";
+import { resizeImageToDataUrl } from "../lib/images";
 import { useAppContext } from "../store/AppContext";
 
 interface FloatingAssistantProps {
@@ -69,6 +70,7 @@ export default function FloatingAssistant({ activeMenu, activeMenuLabel, visible
   const [isOpen, setIsOpen] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [draft, setDraft] = useState("");
+  const [isProcessingReceipt, setIsProcessingReceipt] = useState(false);
   const [targetMenu, setTargetMenu] = useState<AssistantSupportedMenu>("inventory");
   const [messages, setMessages] = useState<AssistantMessage[]>([
     {
@@ -111,6 +113,7 @@ export default function FloatingAssistant({ activeMenu, activeMenuLabel, visible
   );
 
   const quickPrompts = QUICK_PROMPTS[targetMenu] || [];
+  const canUseReceiptIntake = targetMenu === "purchases" || targetMenu === "sales" || targetMenu === "expenses";
 
   const appendMessages = (...entries: AssistantMessage[]) => {
     setMessages((current) => [...current, ...entries]);
@@ -203,6 +206,59 @@ export default function FloatingAssistant({ activeMenu, activeMenuLabel, visible
         suggestions: quickPrompts,
       });
     } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleReceiptUpload = async (file: File | undefined) => {
+    if (!file || isSending) return;
+
+    setIsProcessingReceipt(true);
+    setIsSending(true);
+
+    try {
+      const imageDataUrl = await resizeImageToDataUrl(file, { maxWidth: 1600, maxHeight: 1600, quality: 0.84 });
+      appendMessages({
+        id: `user-receipt-${Date.now()}`,
+        role: "user",
+        text: `Upload foto struk untuk menu ${menuLabelById[targetMenu] || targetMenu}`,
+      });
+
+      const plan = await appApi.assistant.intakePlan({ imageDataUrl });
+      onNavigate(plan.targetMenu);
+      await wait(220);
+
+      const applyResult = await requestAssistantPrefill({
+        targetMenu: plan.targetMenu,
+        formId: plan.formId,
+        fields: plan.fields || {},
+      });
+
+      const pageLabel = menuLabelById[plan.targetMenu] || plan.targetMenu;
+      const applyNote =
+        applyResult.note ||
+        (applyResult.appliedFields.length > 0
+          ? `Form ${pageLabel} sudah dibuka dan draft hasil baca struk sudah diisi.`
+          : `Form ${pageLabel} sudah dibuka, tetapi data struk masih perlu dicek manual.`);
+
+      appendMessages({
+        id: `assistant-receipt-${Date.now()}`,
+        role: "assistant",
+        tone: applyResult.appliedFields.length > 0 ? "success" : "warning",
+        text: `${plan.summary}\n\n${applyNote}`,
+        suggestions: QUICK_PROMPTS[plan.targetMenu],
+        missingFields: plan.missingFields,
+      });
+    } catch (error: any) {
+      appendMessages({
+        id: `assistant-receipt-error-${Date.now()}`,
+        role: "assistant",
+        tone: "warning",
+        text: error.message || "Foto struk belum berhasil diproses.",
+        suggestions: quickPrompts,
+      });
+    } finally {
+      setIsProcessingReceipt(false);
       setIsSending(false);
     }
   };
@@ -355,17 +411,32 @@ export default function FloatingAssistant({ activeMenu, activeMenuLabel, visible
 
               <div className="mt-3 flex items-center justify-between gap-3">
                 <p className="text-xs leading-relaxed text-slate-400">
-                  Assistant akan membuka halaman tujuan lalu mengisi form awal. Data tetap perlu Anda cek sebelum disimpan.
+                  Assistant bisa mengisi draft dari bahasa manusia, dan pada pembelian/penjualan/beban juga bisa membaca foto struk.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => void handleSend()}
-                  disabled={isSending || !draft.trim()}
-                  className="inline-flex shrink-0 items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-slate-300"
-                >
-                  {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  Jalankan
-                </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  {canUseReceiptIntake ? (
+                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:border-emerald-200 hover:text-emerald-700">
+                      {isProcessingReceipt ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+                      Foto Struk
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={(event) => void handleReceiptUpload(event.target.files?.[0])}
+                      />
+                    </label>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => void handleSend()}
+                    disabled={isSending || !draft.trim()}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    Jalankan
+                  </button>
+                </div>
               </div>
             </div>
           </div>

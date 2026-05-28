@@ -8,6 +8,53 @@ const FORM_BY_MENU = {
   expenses: "expense_create",
   admin: "member_create",
 };
+const MENU_LABELS = {
+  inventory: "Inventori",
+  purchases: "Pembelian",
+  productions: "Produksi",
+  sales: "Penjualan",
+  expenses: "Beban",
+  admin: "Admin",
+};
+const MENU_REQUIRED_FIELDS = {
+  inventory: ["name", "type", "unit", "minQty"],
+  purchases: ["itemId", "qty", "totalCost"],
+  productions: ["finishedItemId", "finishedQty"],
+  sales: ["itemId", "qty", "totalRevenue"],
+  expenses: ["description", "amount"],
+  admin: ["email"],
+};
+const MENU_QUICK_EXAMPLES = {
+  inventory: [
+    "Tambah bahan baku gula kategori Bahan, satuan kg, stok minimum 5",
+    "Buat produk jadi Kopi Susu, kategori Minuman, satuan botol, stok minimum 10, harga jual 18000",
+  ],
+  purchases: [
+    "Catat pembelian 10 kg gula total Rp180000 hari ini",
+    "Beli 5 liter susu total 95000 tanggal 2026-05-27",
+  ],
+  productions: [
+    "Catat produksi 40 botol kopi susu, overhead 50000, pakai 2 kg gula dan 5 liter susu",
+    "Produksi 12 box brownies hari ini dengan overhead 35000",
+  ],
+  sales: [
+    "Catat penjualan 12 botol kopi susu total Rp216000 hari ini",
+    "Jual 8 box brownies tanggal 2026-05-27 total 280000",
+  ],
+  expenses: ["Catat beban listrik Rp350000 hari ini", "Tambah beban gaji barista Rp2500000 tanggal 2026-05-27"],
+  admin: [
+    "Buat admin baru untuk bisnis Alpha Kitchen dengan email admin@alpha.com dan password Alpha123",
+    "Tambah staff baru email kasir@kedaimaju.com dengan password Kasir123",
+  ],
+};
+const MENU_KEYWORDS = {
+  inventory: ["inventori", "barang", "item", "stok minimum", "kategori", "harga jual"],
+  purchases: ["pembelian", "beli", "bahan baku", "supplier", "total harga"],
+  productions: ["produksi", "hpp", "overhead", "hasilkan", "bahan baku"],
+  sales: ["penjualan", "jual", "terjual", "pendapatan", "omzet"],
+  expenses: ["beban", "biaya", "listrik", "gaji", "sewa", "operasional"],
+  admin: ["admin", "staff", "user", "akun", "email", "password"],
+};
 
 const JSON_RESPONSE_SHAPE = {
   assistantMessage: "string",
@@ -54,6 +101,323 @@ const normalizeStringList = (value, limit = 3) => {
     .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
     .filter(Boolean)
     .slice(0, limit);
+};
+
+const normalizeComparableText = (value) =>
+  String(value || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9@.\s/-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const parseFlexibleNumber = (value) => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  const raw = String(value || "").replace(/[^\d.,-]/g, "").trim();
+  if (!raw) return null;
+
+  let normalized = raw;
+  const hasDot = normalized.includes(".");
+  const hasComma = normalized.includes(",");
+
+  if (hasDot && hasComma) {
+    if (normalized.lastIndexOf(",") > normalized.lastIndexOf(".")) {
+      normalized = normalized.replace(/\./g, "").replace(",", ".");
+    } else {
+      normalized = normalized.replace(/,/g, "");
+    }
+  } else if (hasComma) {
+    const parts = normalized.split(",");
+    normalized = parts.length === 2 && parts[1].length <= 2 ? `${parts[0]}.${parts[1]}` : parts.join("");
+  } else if (hasDot) {
+    const parts = normalized.split(".");
+    normalized = parts.length === 2 && parts[1].length <= 2 ? normalized : parts.join("");
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const extractNumberByPatterns = (text, patterns) => {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const parsed = parseFlexibleNumber(match?.[1]);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+
+  return null;
+};
+
+const getVisibleSupportedMenus = (context) => {
+  const visibleMenus = Array.isArray(context?.visibleMenus) ? context.visibleMenus : [];
+  const supportedVisibleMenus = visibleMenus
+    .map((menu) => (menu && typeof menu.id === "string" ? menu.id : ""))
+    .filter((menuId) => SUPPORTED_TARGET_MENUS.has(menuId));
+
+  return supportedVisibleMenus.length > 0 ? supportedVisibleMenus : Array.from(SUPPORTED_TARGET_MENUS);
+};
+
+const inferTargetMenuFromMessage = (userMessage, context) => {
+  const normalizedMessage = normalizeComparableText(userMessage);
+  const candidateMenus = getVisibleSupportedMenus(context);
+  const scoredMenus = candidateMenus
+    .map((menuId) => {
+      const score = (MENU_KEYWORDS[menuId] || []).reduce((total, keyword) => {
+        return normalizedMessage.includes(normalizeComparableText(keyword)) ? total + 1 : total;
+      }, 0);
+
+      return { menuId, score };
+    })
+    .sort((left, right) => right.score - left.score);
+
+  if (scoredMenus[0]?.score >= 2) {
+    return scoredMenus[0].menuId;
+  }
+
+  return normalizeTargetMenu(context?.targetMenu || context?.currentMenu, context);
+};
+
+const findCatalogMatchByMention = (userMessage, entries, filter = () => true) => {
+  const normalizedMessage = normalizeComparableText(userMessage);
+  const candidates = entries
+    .filter((entry) => entry && typeof entry.id === "string" && typeof entry.name === "string" && filter(entry))
+    .map((entry) => ({
+      entry,
+      normalizedName: normalizeComparableText(entry.name),
+    }))
+    .filter(({ normalizedName }) => normalizedName && normalizedMessage.includes(normalizedName))
+    .sort((left, right) => right.normalizedName.length - left.normalizedName.length);
+
+  return candidates[0]?.entry || null;
+};
+
+const extractDateValue = (userMessage, todayDate) => {
+  const normalizedMessage = normalizeComparableText(userMessage);
+  if (normalizedMessage.includes("hari ini")) {
+    return todayDate;
+  }
+
+  const isoMatch = userMessage.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  }
+
+  const localMatch = userMessage.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/);
+  if (localMatch) {
+    const day = localMatch[1].padStart(2, "0");
+    const month = localMatch[2].padStart(2, "0");
+    const year = localMatch[3].length === 2 ? `20${localMatch[3]}` : localMatch[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  return todayDate;
+};
+
+const extractInventoryName = (userMessage) => {
+  const match = userMessage.match(
+    /(?:buat|buatkan|tambah|tambahkan)\s+(?:produk jadi|barang jadi|barang setengah jadi|setengah jadi|bahan baku|barang|item)?\s*([^,\n]+?)(?=\s+(?:kategori|satuan|unit|stok|min(?:imal)?|harga)|$|,)/i
+  );
+  return toTrimmedString(match?.[1] || "");
+};
+
+const extractInventoryFields = (userMessage, todayDate) => {
+  const normalizedMessage = normalizeComparableText(userMessage);
+  const inferredType = normalizedMessage.includes("bahan baku")
+    ? "RAW"
+    : normalizedMessage.includes("setengah jadi")
+      ? "HALF_FINISHED"
+      : normalizedMessage.includes("produk jadi") || normalizedMessage.includes("barang jadi")
+        ? "FINISHED"
+        : null;
+
+  const categoryMatch = userMessage.match(/kategori\s+([^,\n]+?)(?=\s+(?:satuan|unit|stok|min(?:imal)?|harga)|$|,)/i);
+  const unitMatch = userMessage.match(/(?:satuan|unit)\s+([a-zA-Z]+)/i);
+
+  return {
+    date: todayDate,
+    name: extractInventoryName(userMessage) || undefined,
+    category: toTrimmedString(categoryMatch?.[1] || "") || "Umum",
+    type: inferredType || "RAW",
+    unit: toTrimmedString(unitMatch?.[1] || "") || "pcs",
+    minQty:
+      extractNumberByPatterns(userMessage, [
+        /stok\s*minimum\s*([\d.,]+)/i,
+        /minimal\s*(?:stok|qty)?\s*([\d.,]+)/i,
+        /min(?:imal)?\s*qty\s*([\d.,]+)/i,
+      ]) ?? undefined,
+    sellingPrice:
+      extractNumberByPatterns(userMessage, [
+        /harga\s*jual\s*(?:rp)?\s*([\d.,]+)/i,
+        /jual\s*(?:rp)?\s*([\d.,]+)/i,
+      ]) ?? undefined,
+  };
+};
+
+const extractTransactionFields = (userMessage, context, menuId) => {
+  const items = getCatalog(context).items;
+  const itemMatch = findCatalogMatchByMention(
+    userMessage,
+    items,
+    (item) =>
+      menuId === "sales"
+        ? item.type === "FINISHED"
+        : menuId === "purchases"
+          ? item.type === "RAW" || item.type === "HALF_FINISHED"
+          : true
+  );
+
+  const qtyPatterns =
+    menuId === "sales"
+      ? [/terjual\s*([\d.,]+)/i, /jual\s*([\d.,]+)/i, /qty\s*([\d.,]+)/i, /kuantitas\s*([\d.,]+)/i]
+      : [/beli\s*([\d.,]+)/i, /pembelian\s*([\d.,]+)/i, /qty\s*([\d.,]+)/i, /kuantitas\s*([\d.,]+)/i];
+  const totalPatterns =
+    menuId === "sales"
+      ? [/total\s*(?:pendapatan|penjualan|omzet)?\s*(?:rp)?\s*([\d.,]+)/i, /rp\s*([\d.,]+)/i]
+      : [/total\s*(?:harga|biaya|pembelian)?\s*(?:rp)?\s*([\d.,]+)/i, /rp\s*([\d.,]+)/i];
+  const contextualQty = itemMatch
+    ? extractNumberByPatterns(userMessage, [
+        new RegExp(`([\\d.,]+)\\s*(?:[a-zA-Z]+)?\\s*${escapeRegExp(itemMatch.name)}`, "i"),
+        new RegExp(`${escapeRegExp(itemMatch.name)}\\s*x\\s*([\\d.,]+)`, "i"),
+      ])
+    : null;
+
+  return {
+    date: extractDateValue(userMessage, context.todayDate),
+    itemId: itemMatch?.id,
+    qty: contextualQty ?? extractNumberByPatterns(userMessage, qtyPatterns) ?? undefined,
+    totalValue: extractNumberByPatterns(userMessage, totalPatterns) ?? undefined,
+  };
+};
+
+const extractProductionFields = (userMessage, context) => {
+  const catalog = getCatalog(context);
+  const finishedItems = catalog.items.filter((item) => item.type === "FINISHED" || item.type === "HALF_FINISHED");
+  const rawItems = catalog.items.filter((item) => item.type === "RAW" || item.type === "HALF_FINISHED");
+  const finishedItemMatch = findCatalogMatchByMention(userMessage, finishedItems);
+
+  const rawMaterials = rawItems
+    .map((item) => {
+      const normalizedItemName = normalizeComparableText(item.name);
+      if (!normalizedItemName || !normalizeComparableText(userMessage).includes(normalizedItemName)) {
+        return null;
+      }
+
+      const itemPattern = escapeRegExp(item.name);
+      const qty = extractNumberByPatterns(userMessage, [
+        new RegExp(`pakai\\s*([\\d.,]+)\\s*(?:[a-zA-Z]+)?\\s*${itemPattern}`, "i"),
+        new RegExp(`([\\d.,]+)\\s*(?:[a-zA-Z]+)?\\s*${itemPattern}`, "i"),
+        new RegExp(`${itemPattern}\\s*(?:sebanyak|qty)?\\s*([\\d.,]+)`, "i"),
+      ]);
+
+      if (qty === null) return null;
+      return { id: item.id, qty };
+    })
+    .filter(Boolean);
+
+  return {
+    date: extractDateValue(userMessage, context.todayDate),
+    finishedItemId: finishedItemMatch?.id,
+    finishedQty:
+      extractNumberByPatterns(userMessage, [/produksi\s*([\d.,]+)/i, /hasilkan\s*([\d.,]+)/i, /qty\s*([\d.,]+)/i]) ?? undefined,
+    overheadCost: extractNumberByPatterns(userMessage, [/overhead\s*(?:rp)?\s*([\d.,]+)/i, /biaya\s*pabrikasi\s*(?:rp)?\s*([\d.,]+)/i]) ?? 0,
+    rawMaterials,
+  };
+};
+
+const extractExpenseFields = (userMessage, context) => {
+  const descriptionMatch = userMessage.match(
+    /(?:catat|tambah|tambahkan)?\s*(?:beban|biaya)\s+(.+?)(?=\s+(?:rp|sebesar|senilai|tanggal|hari ini|\d)|$|,)/i
+  );
+
+  return {
+    date: extractDateValue(userMessage, context.todayDate),
+    description: toTrimmedString(descriptionMatch?.[1] || "") || undefined,
+    amount: extractNumberByPatterns(userMessage, [/(?:rp|sebesar|senilai)\s*([\d.,]+)/i, /beban\s+.+?\s+([\d.,]+)\b/i]) ?? undefined,
+  };
+};
+
+const extractAdminFields = (userMessage, context) => {
+  const catalog = getCatalog(context);
+  const emailMatch = userMessage.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i);
+  const passwordMatch = userMessage.match(/(?:password|kata\s*sandi)(?:nya)?\s*[:=]?\s*([^\s,]+)/i);
+  const businessMatch = findCatalogMatchByMention(userMessage, catalog.businesses);
+  const namedBusinessMatch = userMessage.match(/bisnis\s+(.+?)(?=\s+(?:dengan|email|password|kata\s*sandi)|$|,)/i);
+  const requestedBusinessName = toTrimmedString(namedBusinessMatch?.[1] || "");
+
+  return {
+    email: toTrimmedString(emailMatch?.[0] || "") || undefined,
+    password: toTrimmedString(passwordMatch?.[1] || "") || undefined,
+    businessId: businessMatch?.id,
+    businessName: !businessMatch && requestedBusinessName ? requestedBusinessName : undefined,
+    createBusinessOnRequestedName: !businessMatch && Boolean(requestedBusinessName),
+  };
+};
+
+const removeUndefinedEntries = (value) =>
+  Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== null && entry !== ""));
+
+const buildLocalPlan = (context, userMessage, options = {}) => {
+  const targetMenu = inferTargetMenuFromMessage(userMessage, context);
+  const formId = FORM_BY_MENU[targetMenu] || FORM_BY_MENU.inventory;
+
+  let fields = {};
+  if (targetMenu === "inventory") {
+    fields = removeUndefinedEntries(extractInventoryFields(userMessage, context.todayDate));
+  } else if (targetMenu === "purchases") {
+    const transactionFields = extractTransactionFields(userMessage, context, "purchases");
+    fields = removeUndefinedEntries({
+      date: transactionFields.date,
+      itemId: transactionFields.itemId,
+      qty: transactionFields.qty,
+      totalCost: transactionFields.totalValue,
+    });
+  } else if (targetMenu === "productions") {
+    fields = removeUndefinedEntries(extractProductionFields(userMessage, context));
+    if (Array.isArray(fields.rawMaterials) && fields.rawMaterials.length === 0) {
+      delete fields.rawMaterials;
+    }
+  } else if (targetMenu === "sales") {
+    const transactionFields = extractTransactionFields(userMessage, context, "sales");
+    fields = removeUndefinedEntries({
+      date: transactionFields.date,
+      itemId: transactionFields.itemId,
+      qty: transactionFields.qty,
+      totalRevenue: transactionFields.totalValue,
+    });
+  } else if (targetMenu === "expenses") {
+    fields = removeUndefinedEntries(extractExpenseFields(userMessage, context));
+  } else if (targetMenu === "admin") {
+    fields = removeUndefinedEntries(extractAdminFields(userMessage, context));
+  }
+
+  const requiredFields = MENU_REQUIRED_FIELDS[targetMenu] || [];
+  const missingFields = requiredFields.filter((field) => !Object.prototype.hasOwnProperty.call(fields, field));
+  const hasAnyFields = Object.keys(fields).length > 0;
+  const suggestions = MENU_QUICK_EXAMPLES[targetMenu] || MENU_QUICK_EXAMPLES.inventory;
+  const intro = options.providerUnavailable
+    ? "Saya bantu isi draft dengan mode lokal dulu."
+    : "Saya sudah siapkan draft input.";
+
+  return {
+    assistantMessage: hasAnyFields
+      ? `${intro} Form ${MENU_LABELS[targetMenu]} siap diisi${missingFields.length > 0 ? `, tapi saya masih butuh ${missingFields.join(", ")}.` : "."}`
+      : `${intro} Saya belum bisa menangkap detail penting untuk form ${MENU_LABELS[targetMenu]}.`,
+    action: hasAnyFields && missingFields.length === 0 ? "prefill_form" : "needs_clarification",
+    targetMenu,
+    formId,
+    fields,
+    missingFields,
+    suggestions: suggestions.slice(0, 2),
+    confidence: hasAnyFields ? (missingFields.length === 0 ? 0.74 : 0.48) : 0.18,
+  };
 };
 
 const firstSupportedMenu = (context) => {
@@ -262,23 +626,7 @@ const normalizeFields = (formId, rawFields, context) => {
 };
 
 const buildFallbackPlan = (context, userMessage) => {
-  const targetMenu = normalizeTargetMenu(context?.targetMenu || context?.currentMenu, context);
-  const formId = FORM_BY_MENU[targetMenu] || FORM_BY_MENU.inventory;
-
-  return {
-    assistantMessage:
-      "Saya sudah menangkap menu tujuan, tapi koneksi AI sedang bermasalah. Coba tulis instruksi lebih spesifik agar saya bisa bantu isi form lebih akurat.",
-    action: "needs_clarification",
-    targetMenu,
-    formId,
-    fields: {},
-    missingFields: [],
-    suggestions: [
-      `Contoh ${targetMenu}: ${userMessage || "isi form dengan format lebih rinci"}`,
-      "Tulis nama item, jumlah, nominal, dan tanggal bila ada.",
-    ],
-    confidence: 0.15,
-  };
+  return buildLocalPlan(context, userMessage, { providerUnavailable: true });
 };
 
 const buildSystemPrompt = () => `
@@ -353,7 +701,7 @@ const normalizePlan = (rawPlan, context) => {
   };
 };
 
-export const planAssistantInput = async ({ apiKey, userMessage, context }) => {
+export const planAssistantInput = async ({ apiKey, userMessage, context, model = "google/gemini-2.5-flash" }) => {
   if (!apiKey) {
     return buildFallbackPlan(context, userMessage);
   }
@@ -369,7 +717,7 @@ export const planAssistantInput = async ({ apiKey, userMessage, context }) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model,
         temperature: 0.2,
         messages: [
           { role: "system", content: buildSystemPrompt() },
@@ -386,7 +734,9 @@ export const planAssistantInput = async ({ apiKey, userMessage, context }) => {
         payload?.error?.message ||
         payload?.message ||
         `Permintaan ke fal.ai gagal dengan status ${response.status}.`;
-      throw new Error(message);
+      const error = new Error(message);
+      error.statusCode = response.status;
+      throw error;
     }
 
     const content = payload?.choices?.[0]?.message?.content;
@@ -407,7 +757,9 @@ export const planAssistantInput = async ({ apiKey, userMessage, context }) => {
 
     return normalizePlan(rawPlan, context);
   } catch (error) {
-    console.error("Assistant AI planning failed:", error);
+    const statusSuffix = typeof error?.statusCode === "number" ? ` status ${error.statusCode}` : "";
+    const message = error?.message ? ` ${error.message}` : "";
+    console.warn(`[assistant] fal.ai planning unavailable.${statusSuffix}${message}`);
     return buildFallbackPlan(context, userMessage);
   } finally {
     clearTimeout(timeout);

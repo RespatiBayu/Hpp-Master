@@ -4,6 +4,7 @@ import { Plus, X } from "lucide-react";
 import { coerceAssistantDate, coerceAssistantNumber, coerceAssistantText, subscribeAssistantPrefill } from "../lib/assistant";
 import { calculateItemStats } from "../lib/calculators";
 import { getTodayDateValue } from "../lib/date";
+import { formatCurrency, formatCurrencyDecimal, formatQty } from "../lib/format";
 import { RawMaterialUsage } from "../lib/types";
 import { useAppContext } from "../store/AppContext";
 
@@ -11,7 +12,6 @@ export default function ProductionsView() {
   const { items, purchases, productions, sales, addProduction } = useAppContext();
   const rawItems = items.filter(i => i.type === "RAW" || i.type === "HALF_FINISHED");
   const finishedItems = items.filter(i => i.type === "FINISHED" || i.type === "HALF_FINISHED");
-  
   const stats = calculateItemStats(items, purchases, productions, sales);
 
   const [isAdding, setIsAdding] = useState(false);
@@ -46,6 +46,9 @@ export default function ProductionsView() {
     });
     return totalRawCost + Number(overheadCost || 0);
   };
+
+  const currentHPP = calculateCurrentHPP();
+  const currentUnitHPP = finishedQty && Number(finishedQty) > 0 ? currentHPP / Number(finishedQty) : 0;
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,7 +171,7 @@ export default function ProductionsView() {
                         <input required type="number" min="0.01" step="any" value={usage.qty} onChange={e=>updateRawUsage(idx, 'qty', Number(e.target.value))} placeholder="Qty" className="block w-full bg-slate-50 border-none rounded-xl p-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
                     </div>
                     <div className="truncate text-sm font-medium text-slate-500 sm:w-32">
-                        Rp {Math.round((stats[usage.id]?.avgCost || 0) * usage.qty).toLocaleString()}
+                        {formatCurrency((stats[usage.id]?.avgCost || 0) * usage.qty)}
                     </div>
                     <button type="button" onClick={() => removeRawUsage(idx)} className="self-end p-2 text-slate-400 transition-colors hover:text-red-500 sm:self-auto"><X className="w-5 h-5"/></button>
                 </div>
@@ -177,11 +180,11 @@ export default function ProductionsView() {
 
           <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-slate-100 bg-slate-50 p-6 text-lg sm:flex-row sm:items-center sm:justify-between">
             <span className="font-bold text-slate-600">Total HPP Produksi (Estimasi)</span>
-            <span className="font-bold text-emerald-600 text-2xl">Rp {Math.round(calculateCurrentHPP()).toLocaleString()}</span>
+            <span className="font-bold text-emerald-600 text-2xl">{formatCurrencyDecimal(currentHPP)}</span>
           </div>
           {finishedQty && Number(finishedQty) > 0 && (
              <div className="text-right text-sm font-medium text-slate-500 mt-2">
-                 HPP per unit: Rp {Math.round(calculateCurrentHPP() / Number(finishedQty)).toLocaleString()}
+                 HPP per unit: {formatCurrencyDecimal(currentUnitHPP)}
              </div>
           )}
 
@@ -214,9 +217,9 @@ export default function ProductionsView() {
                   <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-6 py-4 text-sm text-slate-900">{p.date}</td>
                     <td className="px-6 py-4 text-sm font-medium text-slate-900">{item?.name || "-"}</td>
-                    <td className="px-6 py-4 text-sm text-right text-slate-500">{p.finishedQty} {item?.unit}</td>
-                    <td className="px-6 py-4 text-sm text-right text-slate-500">Rp {p.overheadCost.toLocaleString()}</td>
-                    <td className="px-6 py-4 text-sm text-right font-bold text-slate-900">Rp {p.totalHPP.toLocaleString()}</td>
+                    <td className="px-6 py-4 text-sm text-right text-slate-500">{formatQty(p.finishedQty)} {item?.unit}</td>
+                    <td className="px-6 py-4 text-sm text-right text-slate-500">{formatCurrency(p.overheadCost)}</td>
+                    <td className="px-6 py-4 text-sm text-right font-bold text-slate-900">{formatCurrencyDecimal(p.totalHPP)}</td>
                   </tr>
                 )
               })}
